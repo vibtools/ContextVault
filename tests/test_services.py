@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from src.models.settings import ApplicationSettings
@@ -48,6 +50,71 @@ class ServiceTests(unittest.TestCase):
             self.assertIn(payload["writer"], range(4))
             self.assertIn(payload["sequence"], range(25))
             self.assertEqual([item for item in Path(directory).iterdir() if item.suffix == ".tmp"], [])
+
+    def test_json_writer_retries_transient_windows_replace_denial(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "retry.json"
+            real_replace = os.replace
+            attempts = 0
+
+            def transient_replace(source: str | Path, destination: str | Path) -> None:
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    error = PermissionError(13, "Access is denied")
+                    error.winerror = 5
+                    raise error
+                real_replace(source, destination)
+
+            with (
+                patch("src.utils.json_io.os.replace", side_effect=transient_replace),
+                patch("src.utils.json_io.time.sleep") as sleep,
+            ):
+                write_json(path, {"status": "saved"})
+
+            self.assertEqual(read_json(path), {"status": "saved"})
+            self.assertEqual(attempts, 3)
+            self.assertEqual(sleep.call_count, 2)
+
+    def test_json_writer_serializes_same_target_commits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "serialized.json"
+            real_replace = os.replace
+            start = threading.Barrier(4)
+            state_lock = threading.Lock()
+            active_replacements = 0
+            maximum_active_replacements = 0
+            failures: list[BaseException] = []
+
+            def observed_replace(source: str | Path, destination: str | Path) -> None:
+                nonlocal active_replacements, maximum_active_replacements
+                with state_lock:
+                    active_replacements += 1
+                    maximum_active_replacements = max(maximum_active_replacements, active_replacements)
+                try:
+                    threading.Event().wait(0.01)
+                    real_replace(source, destination)
+                finally:
+                    with state_lock:
+                        active_replacements -= 1
+
+            def writer(index: int) -> None:
+                try:
+                    start.wait()
+                    write_json(path, {"writer": index})
+                except BaseException as exc:  # test worker must preserve any failure
+                    failures.append(exc)
+
+            with patch("src.utils.json_io.os.replace", side_effect=observed_replace):
+                threads = [threading.Thread(target=writer, args=(index,)) for index in range(4)]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+
+            self.assertEqual(failures, [])
+            self.assertEqual(maximum_active_replacements, 1)
+            self.assertIn(read_json(path)["writer"], range(4))
 
     def test_history_is_newest_first_and_bounded_format(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

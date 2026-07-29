@@ -6,13 +6,14 @@ All notable changes to ContextVault are documented here. The project follows Sem
 
 ### Fixed
 
+- Serialized same-target JSON commits and added bounded Windows sharing-denial retries so concurrent atomic writes no longer fail with transient `PermissionError: Access is denied`.
 - Corrected Launch Chrome so a blank or regular Chrome profile root resolves to ContextVault's persistent non-standard `data/chrome-user-data` directory instead of forwarding `about:blank` into an already-running daily Chrome process.
 - Removed the invalid automatic CDP fallback from Launch Chrome; Connect remains an explicit operation for intentionally remote-debugging-enabled Chrome instances.
 - Stopped Playwright from passing its two extension-disabling default arguments to the dedicated persistent profile.
 
 ### Validation
 
-- 39 source and regression tests pass, including isolated browser-profile resolution, no-CDP-fallback enforcement, browser-worker lifecycle, repeated-message preservation, opaque attachment detection, deep archive consistency, atomic replacement, and rollback.
+- 41 source and regression tests pass, including isolated browser-profile resolution, no-CDP-fallback enforcement, browser-worker lifecycle, repeated-message preservation, opaque attachment detection, deep archive consistency, atomic replacement, and rollback.
 - All 124 frozen release-checklist items are explicitly classified PASS or FAIL.
 - Official Windows GitHub Actions execution, Nuitka binary generation, and clean Windows 10/11 Chrome-profile smoke testing remain mandatory before a stable public release.
 
