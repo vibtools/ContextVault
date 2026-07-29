@@ -1,0 +1,181 @@
+{
+    "$defs": {
+        "FileHash": {
+            "description": "Manifest integrity entry.",
+            "properties": {
+                "path": {
+                    "title": "Path",
+                    "type": "string"
+                },
+                "sha256": {
+                    "title": "Sha256",
+                    "type": "string"
+                },
+                "size": {
+                    "title": "Size",
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "path",
+                "sha256",
+                "size"
+            ],
+            "title": "FileHash",
+            "type": "object"
+        },
+        "ManifestData": {
+            "description": "manifest.json payload.",
+            "properties": {
+                "archiveId": {
+                    "title": "Archiveid",
+                    "type": "string"
+                },
+                "archiveVersion": {
+                    "title": "Archiveversion",
+                    "type": "string"
+                },
+                "archiveFormatVersion": {
+                    "title": "Archiveformatversion",
+                    "type": "string"
+                },
+                "exportDate": {
+                    "format": "date-time",
+                    "title": "Exportdate",
+                    "type": "string"
+                },
+                "conversationId": {
+                    "title": "Conversationid",
+                    "type": "string"
+                },
+                "conversationTitle": {
+                    "title": "Conversationtitle",
+                    "type": "string"
+                },
+                "fileMapping": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "title": "Filemapping",
+                    "type": "object"
+                },
+                "folderMapping": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "title": "Foldermapping",
+                    "type": "object"
+                },
+                "hashInformation": {
+                    "items": {
+                        "$ref": "#/$defs/FileHash"
+                    },
+                    "title": "Hashinformation",
+                    "type": "array"
+                },
+                "validationStatus": {
+                    "$ref": "#/$defs/ValidationStatus"
+                }
+            },
+            "required": [
+                "archiveId",
+                "archiveVersion",
+                "archiveFormatVersion",
+                "exportDate",
+                "conversationId",
+                "conversationTitle",
+                "fileMapping",
+                "folderMapping",
+                "hashInformation",
+                "validationStatus"
+            ],
+            "title": "ManifestData",
+            "type": "object"
+        },
+        "ValidationStatus": {
+            "description": "Archive validation outcome.",
+            "properties": {
+                "status": {
+                    "enum": [
+                        "valid",
+                        "invalid",
+                        "notValidated"
+                    ],
+                    "title": "Status",
+                    "type": "string"
+                },
+                "validatedAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Validatedat"
+                },
+                "errors": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Errors",
+                    "type": "array"
+                },
+                "warnings": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Warnings",
+                    "type": "array"
+                }
+            },
+            "required": [
+                "status"
+            ],
+            "title": "ValidationStatus",
+            "type": "object"
+        }
+    },
+    "description": "Archive entry-point document.",
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/ManifestData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "ManifestDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/manifest.schema.json"
+}

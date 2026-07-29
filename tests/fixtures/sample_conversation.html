@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <title>Sample Conversation</title>
+  <meta property="article:published_time" content="2026-07-01T10:00:00Z">
+</head>
+<body>
+<main>
+  <article data-message-author-role="user" data-message-id="user-1" data-message-timestamp="2026-07-01T10:00:00Z">
+    <div data-message-content>
+      <p>Please create a Python exporter.</p>
+      <a href="https://files.example.test/spec.pdf" download>Specification</a>
+    </div>
+  </article>
+  <article data-message-author-role="assistant" data-message-id="assistant-1" data-message-timestamp="2026-07-01T10:00:05Z">
+    <div class="markdown prose">
+      <h2>Implementation</h2>
+      <p>Use Playwright and validate the archive. Next step: run tests.</p>
+      <pre><code class="language-python">def export():
+    return "done"
+</code></pre>
+      <img src="https://files.example.test/diagram.png" alt="Architecture diagram" width="20" height="10">
+      <table><tr><th>Layer</th><th>Status</th></tr><tr><td>Parser</td><td>Ready</td></tr></table>
+      <a href="https://example.test/reference">Reference</a>
+    </div>
+  </article>
+</main>
+</body>
+</html>

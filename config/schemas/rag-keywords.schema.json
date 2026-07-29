@@ -1,0 +1,71 @@
+{
+    "$defs": {
+        "RagKeywordsData": {
+            "properties": {
+                "conversationId": {
+                    "title": "Conversationid",
+                    "type": "string"
+                },
+                "keywords": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Keywords",
+                    "type": "array"
+                },
+                "topics": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Topics",
+                    "type": "array"
+                }
+            },
+            "required": [
+                "conversationId",
+                "keywords",
+                "topics"
+            ],
+            "title": "RagKeywordsData",
+            "type": "object"
+        }
+    },
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/RagKeywordsData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "RagKeywordsDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/rag-keywords.schema.json"
+}

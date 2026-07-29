@@ -1,0 +1,110 @@
+{
+    "$defs": {
+        "RagChunk": {
+            "description": "Logical RAG chunk that preserves message boundaries.",
+            "properties": {
+                "chunkId": {
+                    "title": "Chunkid",
+                    "type": "string"
+                },
+                "sequenceNumber": {
+                    "title": "Sequencenumber",
+                    "type": "integer"
+                },
+                "messageIds": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Messageids",
+                    "type": "array"
+                },
+                "text": {
+                    "title": "Text",
+                    "type": "string"
+                },
+                "characterCount": {
+                    "title": "Charactercount",
+                    "type": "integer"
+                },
+                "wordCount": {
+                    "title": "Wordcount",
+                    "type": "integer"
+                },
+                "metadata": {
+                    "additionalProperties": true,
+                    "title": "Metadata",
+                    "type": "object"
+                }
+            },
+            "required": [
+                "chunkId",
+                "sequenceNumber",
+                "messageIds",
+                "text",
+                "characterCount",
+                "wordCount"
+            ],
+            "title": "RagChunk",
+            "type": "object"
+        },
+        "RagChunksData": {
+            "properties": {
+                "conversationId": {
+                    "title": "Conversationid",
+                    "type": "string"
+                },
+                "chunks": {
+                    "items": {
+                        "$ref": "#/$defs/RagChunk"
+                    },
+                    "title": "Chunks",
+                    "type": "array"
+                }
+            },
+            "required": [
+                "conversationId",
+                "chunks"
+            ],
+            "title": "RagChunksData",
+            "type": "object"
+        }
+    },
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/RagChunksData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "RagChunksDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/rag-chunks.schema.json"
+}

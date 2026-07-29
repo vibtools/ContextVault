@@ -1,0 +1,126 @@
+{
+    "$defs": {
+        "MetadataData": {
+            "description": "metadata.json payload.",
+            "properties": {
+                "conversationTitle": {
+                    "title": "Conversationtitle",
+                    "type": "string"
+                },
+                "conversationUrl": {
+                    "title": "Conversationurl",
+                    "type": "string"
+                },
+                "conversationId": {
+                    "title": "Conversationid",
+                    "type": "string"
+                },
+                "platformName": {
+                    "title": "Platformname",
+                    "type": "string"
+                },
+                "exportDate": {
+                    "format": "date-time",
+                    "title": "Exportdate",
+                    "type": "string"
+                },
+                "createdDate": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Createddate"
+                },
+                "language": {
+                    "title": "Language",
+                    "type": "string"
+                },
+                "totalMessages": {
+                    "title": "Totalmessages",
+                    "type": "integer"
+                },
+                "userMessages": {
+                    "title": "Usermessages",
+                    "type": "integer"
+                },
+                "assistantMessages": {
+                    "title": "Assistantmessages",
+                    "type": "integer"
+                },
+                "characterCount": {
+                    "title": "Charactercount",
+                    "type": "integer"
+                },
+                "wordCount": {
+                    "title": "Wordcount",
+                    "type": "integer"
+                },
+                "estimatedTokenCount": {
+                    "title": "Estimatedtokencount",
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "conversationTitle",
+                "conversationUrl",
+                "conversationId",
+                "platformName",
+                "exportDate",
+                "language",
+                "totalMessages",
+                "userMessages",
+                "assistantMessages",
+                "characterCount",
+                "wordCount",
+                "estimatedTokenCount"
+            ],
+            "title": "MetadataData",
+            "type": "object"
+        }
+    },
+    "description": "metadata.json document.",
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/MetadataData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "MetadataDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/metadata.schema.json"
+}

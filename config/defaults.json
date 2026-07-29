@@ -1,0 +1,34 @@
+{
+    "schemaVersion": "1.0",
+    "browser": {
+        "browser": "Chrome",
+        "userDataDir": "",
+        "profileDirectory": "Default",
+        "cdpEndpoint": "http://127.0.0.1:9222",
+        "startUrl": "https://chatgpt.com/"
+    },
+    "export": {
+        "defaultFolder": "exports",
+        "archiveName": "{title}",
+        "autoCreateFolder": true,
+        "overwrite": false,
+        "compress": false,
+        "verifyExport": true
+    },
+    "assets": {
+        "images": true,
+        "code": true,
+        "tables": true,
+        "attachments": true,
+        "markdown": true,
+        "json": true,
+        "summary": true,
+        "statistics": true,
+        "searchIndex": true
+    },
+    "performance": {
+        "workerThreads": 4,
+        "delayMode": "Normal",
+        "memoryMode": "Balanced"
+    }
+}

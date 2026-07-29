@@ -1,177 +1,55 @@
-# 🛠️ nuitka.toml
-
-```toml
-# ==========================================================
-# ContextVault
-# Official Nuitka Build Configuration
-# Version: 1.0
-# ==========================================================
-
 [project]
 name = "ContextVault"
 version = "1.0.0"
-
-# ----------------------------------------------------------
-# Compiler
-# ----------------------------------------------------------
+main_file = "src/app.py"
 
 [nuitka]
-
-# Build Mode
 standalone = true
 onefile = false
-
-# Output
-output-dir = "build"
-
-# Main File
-follow-imports = true
-
-# Performance
+output_dir = "build"
+output_filename = "ContextVault"
+follow_imports = true
 lto = "yes"
-
-# Console
-windows-console-mode = "disable"
-
-# Remove build cache after compile
-remove-output = true
-
-# Create report
+windows_console_mode = "disable"
+remove_output = true
 report = "build-report.xml"
-
-# Company Info
-company-name = "Vib Tools"
-
-# Product Info
-product-name = "ContextVault"
-
-file-version = "1.0.0"
-
-product-version = "1.0.0"
-
+company_name = "Vib Tools"
+product_name = "ContextVault"
+file_version = "1.0.0"
+product_version = "1.0.0"
 copyright = "Copyright © Vib Tools"
-
-# Icon
-windows-icon-from-ico = "assets/icons/app.ico"
-
-# Plugins
-enable-plugin = [
-    "tk-inter"
-]
-
-# ----------------------------------------------------------
-# Package Inclusion
-# ----------------------------------------------------------
-
-include-package = [
+windows_icon_from_ico = "assets/icons/app.ico"
+enable_plugin = ["tk-inter"]
+include_package_data = ["customtkinter"]
+include_package = [
     "customtkinter",
     "playwright",
     "PIL",
     "bs4",
     "markdownify",
     "pydantic",
-    "tenacity"
+    "tenacity",
 ]
-
-# ----------------------------------------------------------
-# Data Directories
-# ----------------------------------------------------------
-
-include-data-dir = [
+include_data_dir = [
     "assets=runtime/assets",
-    "schemas=runtime/schemas",
-    "templates=runtime/templates",
-    "themes=runtime/themes",
-    "config=runtime/config"
+    "config=runtime/config",
+    "config/schemas=runtime/schemas",
+    "data/templates=runtime/templates",
+    "assets/themes=runtime/themes",
+    "assets/icons=runtime/icons",
 ]
-
-# ----------------------------------------------------------
-# Data Files
-# ----------------------------------------------------------
-
-include-data-files = [
+include_data_files = [
     "README.txt=README.txt",
-    "LICENSE=LICENSE"
+    "LICENSE=LICENSE",
 ]
-
-# ----------------------------------------------------------
-# Exclude
-# ----------------------------------------------------------
-
-nofollow-import-to = [
+nofollow_import_to = [
     "pytest",
     "pip",
     "setuptools",
     "wheel",
     "tkinter.test",
-    "unittest"
+    "unittest",
 ]
-
-# ----------------------------------------------------------
-# Anti Bloat
-# ----------------------------------------------------------
-
-noinclude-default-mode = "error"
-
-# ----------------------------------------------------------
-# Deployment
-# ----------------------------------------------------------
-
-assume-yes-for-downloads = true
-
-# ----------------------------------------------------------
-# Build Folder
-# ----------------------------------------------------------
-
-output-filename = "ContextVault"
-
-# ----------------------------------------------------------
-# Runtime Layout
-# ----------------------------------------------------------
-
-create-distribution-folder = true
-```
-
----
-
-# 📦 Expected Build Result
-
-```
-build/
-
-└── ContextVault.dist/
-
-    ├── ContextVault.exe
-
-    ├── runtime/
-    │
-    ├── assets/
-    ├── schemas/
-    ├── templates/
-    ├── themes/
-    ├── config/
-    │
-    ├── python DLLs
-    ├── required libraries
-    ├── Playwright runtime
-    └── ...
-
-```
-
----
-
-# 🔒 Build Rules
-
-* Official Compiler হবে **Nuitka**
-* Build Mode হবে **Standalone + OneDir**
-* Console Window Disable থাকবে
-* Icon Build-এর সময় যুক্ত হবে
-* শুধুমাত্র Official Dependency Include করা হবে
-* Development Dependency Include করা যাবে না
-* Release Build সর্বদা একই Configuration অনুসরণ করবে
-
----
-
-# 🏁 Freeze Statement
-
-ContextVault v1.0-এর সকল Official Windows Build এই `nuitka.toml` Configuration অনুসরণ করবে। Local Build এবং GitHub Actions Build একই Build Specification ব্যবহার করবে, যাতে প্রতিটি Release ধারাবাহিক, পুনরুত্পাদনযোগ্য (reproducible) এবং Production-ready থাকে।
+noinclude_default_mode = "error"
+assume_yes_for_downloads = false
+msvc = "latest"

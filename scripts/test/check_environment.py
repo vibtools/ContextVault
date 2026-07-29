@@ -1,87 +1,91 @@
-"""
-ContextVault
-Development Environment Checker
+"""Forensic source/runtime environment verification for ContextVault."""
 
----
+from __future__ import annotations
 
-## Purpose
+import argparse
+import json
+import platform
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
 
-This script validates the local development environment before
-running, testing, or building ContextVault.
+ROOT = Path(__file__).resolve().parents[2]
+REQUIRED_PATHS = (
+    "src/app.py",
+    "requirements.txt",
+    "requirements.lock",
+    "nuitka.toml",
+    "assets/icons/app.ico",
+    "config/defaults.json",
+    "config/schemas/manifest.schema.json",
+    "data/templates/README.txt",
+)
 
-It is intended to help developers quickly identify missing
-dependencies or configuration problems.
 
----
+def _find_chrome() -> str | None:
+    candidates: list[Path] = []
+    if platform.system() == "Windows":
+        for variable in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+            value = __import__("os").environ.get(variable)
+            if value:
+                candidates.append(Path(value) / "Google/Chrome/Application/chrome.exe")
+    else:
+        for name in ("google-chrome", "google-chrome-stable", "chrome"):
+            found = shutil.which(name)
+            if found:
+                return found
+    return next((str(path) for path in candidates if path.is_file()), None)
 
-## Current Status
-
-PLACEHOLDER IMPLEMENTATION
-
-This script MUST be completed after the project's architecture,
-startup sequence, dependencies, and testing workflow have been
-fully implemented.
-
----
-
-## Planned Responsibilities
-
-The completed implementation should verify at minimum:
-
-* Supported Python version
-* Virtual environment status
-* Required Python packages
-* requirements.lock consistency
-* Playwright installation
-* Browser installation
-* Project directory structure
-* Required configuration files
-* Required assets
-* Writable directories
-* Environment variables
-* Git availability
-* GitHub Actions compatibility (where applicable)
-
----
-
-## Expected Result
-
-The final implementation should produce a clear PASS / FAIL
-report with actionable error messages and a non-zero exit code
-when critical checks fail.
-
----
-
-## Notes
-
-This script is intended for local development only.
-
-It is not part of the production application.
-
-"""
-
-from **future** import annotations
 
 def main() -> int:
-print("=" * 60)
-print("ContextVault Development Environment Checker")
-print("=" * 60)
-print()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-chrome", action="store_true", help="Do not require Google Chrome.")
+    parser.add_argument("--skip-modules", action="store_true", help="Do not verify installed Python modules.")
+    args = parser.parse_args()
+    failures: list[str] = []
 
-```
-print("Status : PLACEHOLDER")
-print()
+    if sys.version_info < (3, 12):
+        failures.append(f"Python 3.12+ required; found {platform.python_version()}")
+    else:
+        print(f"PASS Python {platform.python_version()}")
 
-print("This script has not been implemented yet.")
-print()
+    for relative in REQUIRED_PATHS:
+        path = ROOT / relative
+        if path.exists():
+            print(f"PASS {relative}")
+        else:
+            failures.append(f"Missing required path: {relative}")
 
-print("Complete this script after the application")
-print("architecture, dependencies, and development")
-print("workflow have been finalized.")
-print()
+    try:
+        with (ROOT / "nuitka.toml").open("rb") as stream:
+            tomllib.load(stream)
+        json.loads((ROOT / "config/defaults.json").read_text(encoding="utf-8"))
+        json.loads((ROOT / "vibproject.ygit").read_text(encoding="utf-8"))
+        print("PASS TOML and JSON configuration parse")
+    except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
+        failures.append(f"Configuration parse failed: {exc}")
 
-return 0
-```
+    if not args.skip_modules:
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/test/checkmodules.py")], cwd=ROOT)
+        if result.returncode != 0:
+            failures.append("Locked module verification failed.")
 
-if **name** == "**main**":
-raise SystemExit(main())
+    if not args.skip_chrome:
+        chrome = _find_chrome()
+        if chrome:
+            print(f"PASS Google Chrome: {chrome}")
+        else:
+            failures.append("Google Chrome Stable was not found.")
+
+    if failures:
+        for failure in failures:
+            print(f"FAIL {failure}", file=sys.stderr)
+        return 1
+    print("Environment verification passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

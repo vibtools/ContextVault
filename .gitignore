@@ -1,0 +1,41 @@
+# Python bytecode and tooling
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and release output
+build/
+dist/
+artifacts/
+*.spec
+*.build/
+*.dist/
+*.onefile-build/
+*.zip
+!tests/fixtures/*.zip
+
+# Runtime data
+data/settings.json
+data/export_history.json
+exports/
+logs/
+*.log
+*.partial
+*.invalid
+
+# IDE and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

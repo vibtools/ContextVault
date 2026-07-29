@@ -1,0 +1,173 @@
+{
+    "$defs": {
+        "AssetSettings": {
+            "description": "Controls which archive components are generated.",
+            "properties": {
+                "images": {
+                    "default": true,
+                    "title": "Images",
+                    "type": "boolean"
+                },
+                "code": {
+                    "default": true,
+                    "title": "Code",
+                    "type": "boolean"
+                },
+                "tables": {
+                    "default": true,
+                    "title": "Tables",
+                    "type": "boolean"
+                },
+                "attachments": {
+                    "default": true,
+                    "title": "Attachments",
+                    "type": "boolean"
+                },
+                "markdown": {
+                    "default": true,
+                    "title": "Markdown",
+                    "type": "boolean"
+                },
+                "json": {
+                    "default": true,
+                    "title": "Json",
+                    "type": "boolean"
+                },
+                "summary": {
+                    "default": true,
+                    "title": "Summary",
+                    "type": "boolean"
+                },
+                "statistics": {
+                    "default": true,
+                    "title": "Statistics",
+                    "type": "boolean"
+                },
+                "searchIndex": {
+                    "default": true,
+                    "title": "Searchindex",
+                    "type": "boolean"
+                }
+            },
+            "title": "AssetSettings",
+            "type": "object"
+        },
+        "BrowserSettings": {
+            "description": "Google Chrome and persistent profile configuration.",
+            "properties": {
+                "browser": {
+                    "default": "Chrome",
+                    "title": "Browser",
+                    "type": "string"
+                },
+                "userDataDir": {
+                    "default": "",
+                    "title": "Userdatadir",
+                    "type": "string"
+                },
+                "profileDirectory": {
+                    "default": "Default",
+                    "title": "Profiledirectory",
+                    "type": "string"
+                },
+                "cdpEndpoint": {
+                    "default": "http://127.0.0.1:9222",
+                    "title": "Cdpendpoint",
+                    "type": "string"
+                },
+                "startUrl": {
+                    "default": "https://chatgpt.com/",
+                    "title": "Starturl",
+                    "type": "string"
+                }
+            },
+            "title": "BrowserSettings",
+            "type": "object"
+        },
+        "ExportSettings": {
+            "description": "Archive output behavior.",
+            "properties": {
+                "defaultFolder": {
+                    "default": "exports",
+                    "title": "Defaultfolder",
+                    "type": "string"
+                },
+                "archiveName": {
+                    "default": "{title}",
+                    "title": "Archivename",
+                    "type": "string"
+                },
+                "autoCreateFolder": {
+                    "default": true,
+                    "title": "Autocreatefolder",
+                    "type": "boolean"
+                },
+                "overwrite": {
+                    "default": false,
+                    "title": "Overwrite",
+                    "type": "boolean"
+                },
+                "compress": {
+                    "default": false,
+                    "title": "Compress",
+                    "type": "boolean"
+                },
+                "verifyExport": {
+                    "default": true,
+                    "title": "Verifyexport",
+                    "type": "boolean"
+                }
+            },
+            "title": "ExportSettings",
+            "type": "object"
+        },
+        "PerformanceSettings": {
+            "description": "Worker and extraction performance controls.",
+            "properties": {
+                "workerThreads": {
+                    "default": 4,
+                    "maximum": 8,
+                    "minimum": 1,
+                    "title": "Workerthreads",
+                    "type": "integer"
+                },
+                "delayMode": {
+                    "default": "Normal",
+                    "title": "Delaymode",
+                    "type": "string"
+                },
+                "memoryMode": {
+                    "default": "Balanced",
+                    "title": "Memorymode",
+                    "type": "string"
+                }
+            },
+            "title": "PerformanceSettings",
+            "type": "object"
+        }
+    },
+    "description": "Complete user-editable configuration.",
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "browser": {
+            "$ref": "#/$defs/BrowserSettings"
+        },
+        "export": {
+            "$ref": "#/$defs/ExportSettings"
+        },
+        "assets": {
+            "$ref": "#/$defs/AssetSettings"
+        },
+        "performance": {
+            "$ref": "#/$defs/PerformanceSettings"
+        }
+    },
+    "title": "ApplicationSettings",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/settings.schema.json"
+}

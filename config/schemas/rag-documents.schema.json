@@ -1,0 +1,99 @@
+{
+    "$defs": {
+        "RagDocumentEntry": {
+            "properties": {
+                "documentId": {
+                    "title": "Documentid",
+                    "type": "string"
+                },
+                "conversationId": {
+                    "title": "Conversationid",
+                    "type": "string"
+                },
+                "title": {
+                    "title": "Title",
+                    "type": "string"
+                },
+                "sourceUrl": {
+                    "title": "Sourceurl",
+                    "type": "string"
+                },
+                "chunkIds": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Chunkids",
+                    "type": "array"
+                },
+                "metadata": {
+                    "additionalProperties": true,
+                    "title": "Metadata",
+                    "type": "object"
+                }
+            },
+            "required": [
+                "documentId",
+                "conversationId",
+                "title",
+                "sourceUrl",
+                "chunkIds"
+            ],
+            "title": "RagDocumentEntry",
+            "type": "object"
+        },
+        "RagDocumentsData": {
+            "properties": {
+                "documents": {
+                    "items": {
+                        "$ref": "#/$defs/RagDocumentEntry"
+                    },
+                    "title": "Documents",
+                    "type": "array"
+                }
+            },
+            "required": [
+                "documents"
+            ],
+            "title": "RagDocumentsData",
+            "type": "object"
+        }
+    },
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/RagDocumentsData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "RagDocumentsDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/rag-documents.schema.json"
+}

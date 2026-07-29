@@ -1,0 +1,16 @@
+{
+    "schemaVersion": "1.0",
+    "name": "ContextVault Dark",
+    "mode": "dark",
+    "colors": {
+        "background": "#0F1117",
+        "card": "#161B22",
+        "border": "#242938",
+        "primary": "#3B82F6",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        "text": "#F8FAFC",
+        "muted": "#94A3B8"
+    }
+}

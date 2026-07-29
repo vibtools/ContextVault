@@ -1,0 +1,118 @@
+{
+    "$defs": {
+        "SummaryData": {
+            "description": "summary.json payload.",
+            "properties": {
+                "shortSummary": {
+                    "title": "Shortsummary",
+                    "type": "string"
+                },
+                "longSummary": {
+                    "title": "Longsummary",
+                    "type": "string"
+                },
+                "mainTopics": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Maintopics",
+                    "type": "array"
+                },
+                "keywords": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Keywords",
+                    "type": "array"
+                },
+                "importantDecisions": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Importantdecisions",
+                    "type": "array"
+                },
+                "todoList": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Todolist",
+                    "type": "array"
+                },
+                "mentionedTechnologies": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Mentionedtechnologies",
+                    "type": "array"
+                },
+                "mentionedLibraries": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Mentionedlibraries",
+                    "type": "array"
+                },
+                "mentionedUrls": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Mentionedurls",
+                    "type": "array"
+                },
+                "mentionedFiles": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Mentionedfiles",
+                    "type": "array"
+                }
+            },
+            "required": [
+                "shortSummary",
+                "longSummary"
+            ],
+            "title": "SummaryData",
+            "type": "object"
+        }
+    },
+    "description": "summary.json document.",
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/SummaryData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "SummaryDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/summary.schema.json"
+}

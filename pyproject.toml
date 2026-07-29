@@ -5,5 +5,43 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "contextvault"
 version = "1.0.0"
-description = "ContextVault"
+description = "Portable, lossless, RAG-ready ChatGPT conversation archiver."
+readme = "README.md"
 requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Vib Tools" }]
+keywords = ["chatgpt", "archive", "rag", "playwright", "customtkinter"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "customtkinter==5.2.2",
+    "playwright==1.60.0",
+    "beautifulsoup4==4.13.5",
+    "markdownify==1.2.0",
+    "Pillow==11.3.0",
+    "pydantic==2.11.7",
+    "tenacity==9.1.2",
+]
+
+[project.urls]
+Homepage = "https://vib.tools/"
+Repository = "https://github.com/vibtools/ContextVault"
+Issues = "https://github.com/vibtools/ContextVault/issues"
+Documentation = "https://github.com/vibtools/ContextVault/tree/main/docs"
+
+[project.scripts]
+contextvault = "src.app.application:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.contextvault]
+entrypoint = "src/app.py"
+archive_schema_version = "1.0"
+build_configuration = "nuitka.toml"

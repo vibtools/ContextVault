@@ -1,225 +1,212 @@
 {
-  "$schema": "https://schema.ygit.dev/vpms/v1/vibproject.schema.json",
-
-  "schemaVersion": 1,
-  "manifestVersion": "1.0.0",
-
-  "project": {
-    "id": "",
-    "name": "ContextVault",
-    "slug": "contextvault",
-    "displayName": "ContextVault",
-    "description": "Open-source AI conversation archive platform for preserving complete context in a portable, lossless format.",
-    "summary": "Preserve AI Context. Forever.",
-    "version": "",
-    "status": "development",
-    "visibility": "public",
-    "category": "desktop-application",
-    "keywords": [
-      "ai",
-      "chatgpt",
-      "archive",
-      "conversation",
-      "llm",
-      "rag",
-      "playwright",
-      "automation",
-      "desktop",
-      "knowledge-base"
-    ],
-    "homepage": "",
-    "website": "https://vib.tools/"
-  },
-
-  "organization": {
-    "company": "Vib Tools",
-    "owner": "",
-    "maintainers": [],
-    "contributors": [],
-    "contact": {
-      "email": "",
-      "website": "https://vib.tools/"
+    "$schema": "https://schema.ygit.dev/vpms/v1/vibproject.schema.json",
+    "schemaVersion": 1,
+    "manifestVersion": "1.0.0",
+    "project": {
+        "id": "vibtools/contextvault",
+        "name": "ContextVault",
+        "slug": "contextvault",
+        "displayName": "ContextVault",
+        "description": "Open-source AI conversation archive platform for preserving complete context in a portable, lossless format.",
+        "summary": "Preserve AI Context. Forever.",
+        "version": "1.0.0",
+        "status": "release-candidate",
+        "visibility": "public",
+        "category": "desktop-application",
+        "keywords": [
+            "ai",
+            "chatgpt",
+            "archive",
+            "conversation",
+            "llm",
+            "rag",
+            "playwright",
+            "automation",
+            "desktop",
+            "knowledge-base"
+        ],
+        "homepage": "https://github.com/vibtools/ContextVault",
+        "website": "https://vib.tools/"
+    },
+    "organization": {
+        "company": "Vib Tools",
+        "owner": "Vib Tools",
+        "maintainers": [
+            "vibtools"
+        ],
+        "contributors": [],
+        "contact": {
+            "website": "https://vib.tools/"
+        }
+    },
+    "repository": {
+        "provider": "GitHub",
+        "url": "https://github.com/vibtools/ContextVault",
+        "branch": "main",
+        "defaultBranch": "main",
+        "issues": "https://github.com/vibtools/ContextVault/issues",
+        "discussions": "https://github.com/vibtools/ContextVault/discussions",
+        "wiki": "https://github.com/vibtools/ContextVault/wiki",
+        "documentation": "https://github.com/vibtools/ContextVault/tree/main/docs"
+    },
+    "branding": {
+        "productName": "ContextVault",
+        "shortName": "CV",
+        "logo": "assets/images/ContextVault-logo.png",
+        "icon": "assets/icons/icon.png",
+        "banner": "assets/images/GitHub-README-hero-banner.png",
+        "favicon": "",
+        "theme": "Dark"
+    },
+    "license": {
+        "name": "MIT License",
+        "spdx": "MIT",
+        "file": "LICENSE"
+    },
+    "technology": {
+        "languages": [
+            "Python"
+        ],
+        "frameworks": [
+            "CustomTkinter"
+        ],
+        "libraries": [
+            "Playwright",
+            "BeautifulSoup4",
+            "Markdownify",
+            "Pillow",
+            "Pydantic",
+            "Tenacity"
+        ],
+        "packageManagers": [
+            "pip"
+        ],
+        "databases": [],
+        "apis": []
+    },
+    "platform": {
+        "desktop": [
+            "Windows"
+        ],
+        "mobile": [],
+        "server": [],
+        "web": [],
+        "operatingSystems": [
+            "Windows 10",
+            "Windows 11"
+        ]
+    },
+    "runtime": {
+        "python": "3.12+",
+        "node": "",
+        "docker": false,
+        "container": "",
+        "distribution": "Nuitka OneDir",
+        "browser": "Google Chrome Stable",
+        "browserAutomation": "Playwright",
+        "browserProfile": "Existing Chrome Profile",
+        "browserExtensions": true,
+        "runtimeDirectory": "runtime/"
+    },
+    "entrypoints": {
+        "application": "src/app.py",
+        "cli": "",
+        "api": "",
+        "documentation": "docs/index.md",
+        "tests": "tests/"
+    },
+    "paths": {
+        "source": "src/",
+        "tests": "tests/",
+        "documentation": "docs/",
+        "scripts": "scripts/",
+        "assets": "assets/",
+        "examples": "examples/",
+        "configuration": "config/",
+        "data": "data/",
+        "project": "project/"
+    },
+    "dependencies": {
+        "required": [
+            "customtkinter",
+            "playwright",
+            "beautifulsoup4",
+            "markdownify",
+            "Pillow",
+            "pydantic",
+            "tenacity"
+        ],
+        "optional": [],
+        "externalServices": [
+            "Google Chrome"
+        ]
+    },
+    "documentation": {
+        "readme": "README.md",
+        "structure": "PROJECT_STRUCTURE.md",
+        "changelog": "CHANGELOG.md",
+        "license": "LICENSE",
+        "docsRoot": "docs/",
+        "website": "https://github.com/vibtools/ContextVault/tree/main/docs"
+    },
+    "build": {
+        "buildSystem": "Nuitka",
+        "packageFormat": [
+            "ZIP",
+            "OneDir"
+        ],
+        "commands": {
+            "install": "python -m pip install -r requirements.lock",
+            "build": "python scripts/build/build_windows.py",
+            "test": "python scripts/test/run_tests.py",
+            "lint": "python -m compileall -q src scripts tests",
+            "format": ""
+        }
+    },
+    "release": {
+        "strategy": "GitHub Releases",
+        "versioning": "Semantic Versioning",
+        "latestVersion": "1.0.0",
+        "releaseNotes": "docs/release-notes/"
+    },
+    "quality": {
+        "formatter": "EditorConfig",
+        "linter": "AST and compile audit",
+        "testFramework": "unittest",
+        "coverage": "behavioral release-gate suite",
+        "security": [
+            "path validation",
+            "atomic writes",
+            "SHA-256 integrity",
+            "locked dependencies"
+        ]
+    },
+    "automation": {
+        "ci": "GitHub Actions",
+        "cd": "GitHub Releases",
+        "workflows": [
+            "Build",
+            "Test",
+            "Package",
+            "Release"
+        ],
+        "scheduledTasks": []
+    },
+    "ai": {
+        "enabled": true,
+        "repositoryContext": true,
+        "documentationContext": true,
+        "projectStructure": true,
+        "codingGuidelines": true,
+        "architectureGuidelines": true,
+        "entrypointDiscovery": true
+    },
+    "metadata": {
+        "createdAt": "2026-07-28T00:00:00Z",
+        "updatedAt": "2026-07-28T00:00:00Z",
+        "manifestAuthor": "Vib Tools",
+        "generator": "YGit CLI / ContextVault forensic completion",
+        "specification": "VPMS",
+        "specificationVersion": "1.0.0"
     }
-  },
-
-  "repository": {
-    "provider": "GitHub",
-    "url": "",
-    "branch": "main",
-    "defaultBranch": "main",
-    "issues": "",
-    "discussions": "",
-    "wiki": "",
-    "documentation": ""
-  },
-
-  "branding": {
-    "productName": "ContextVault",
-    "shortName": "CV",
-    "logo": "assets/images/ContextVault-logo.png",
-    "icon": "assets/icons/icon.png",
-    "banner": "assets/images/GitHub-README-hero-banner.png",
-    "favicon": "",
-    "theme": "Dark"
-  },
-
-  "license": {
-    "name": "",
-    "spdx": "",
-    "file": "LICENSE"
-  },
-
-  "technology": {
-    "languages": [
-      "Python"
-    ],
-    "frameworks": [
-      "CustomTkinter"
-    ],
-    "libraries": [
-      "Playwright",
-      "BeautifulSoup4",
-      "Markdownify",
-      "Pillow",
-      "Pydantic",
-      "Tenacity"
-    ],
-    "packageManagers": [
-      "pip"
-    ],
-    "databases": [],
-    "apis": []
-  },
-
-  "platform": {
-    "desktop": [
-      "Windows"
-    ],
-    "mobile": [],
-    "server": [],
-    "web": [],
-    "operatingSystems": [
-      "Windows 10",
-      "Windows 11"
-    ]
-  },
-
-  "runtime": {
-    "python": "3.12+",
-    "node": "",
-    "docker": false,
-    "container": "",
-    "distribution": "Nuitka OneDir",
-    "browser": "Google Chrome Stable",
-    "browserAutomation": "Playwright",
-    "browserProfile": "Existing Chrome Profile",
-    "browserExtensions": true,
-    "runtimeDirectory": "runtime/"
-  },
-
-  "entrypoints": {
-    "application": "src/app.py",
-    "cli": "",
-    "api": "",
-    "documentation": "docs/index.md",
-    "tests": "tests/"
-  },
-
-  "paths": {
-    "source": "src/",
-    "tests": "tests/",
-    "documentation": "docs/",
-    "scripts": "scripts/",
-    "assets": "assets/",
-    "examples": "examples/",
-    "configuration": "config/",
-    "data": "data/",
-    "project": "project/"
-  },
-
-  "dependencies": {
-    "required": [
-      "customtkinter",
-      "playwright",
-      "beautifulsoup4",
-      "markdownify",
-      "Pillow",
-      "pydantic",
-      "tenacity"
-    ],
-    "optional": [],
-    "externalServices": [
-      "Google Chrome"
-    ]
-  },
-
-  "documentation": {
-    "readme": "README.md",
-    "structure": "PROJECT_STRUCTURE.md",
-    "changelog": "CHANGELOG.md",
-    "license": "LICENSE",
-    "docsRoot": "docs/",
-    "website": ""
-  },
-
-  "build": {
-    "buildSystem": "Nuitka",
-    "packageFormat": [
-      "ZIP",
-      "OneDir"
-    ],
-    "commands": {
-      "install": "pip install -r requirements.txt",
-      "build": "",
-      "test": "",
-      "lint": "",
-      "format": ""
-    }
-  },
-
-  "release": {
-    "strategy": "GitHub Releases",
-    "versioning": "Semantic Versioning",
-    "latestVersion": "",
-    "releaseNotes": "docs/release-notes/"
-  },
-
-  "quality": {
-    "formatter": "",
-    "linter": "",
-    "testFramework": "",
-    "coverage": "",
-    "security": []
-  },
-
-  "automation": {
-    "ci": "GitHub Actions",
-    "cd": "GitHub Releases",
-    "workflows": [
-      "Build",
-      "Test",
-      "Package",
-      "Release"
-    ],
-    "scheduledTasks": []
-  },
-
-  "ai": {
-    "enabled": true,
-    "repositoryContext": true,
-    "documentationContext": true,
-    "projectStructure": true,
-    "codingGuidelines": true,
-    "architectureGuidelines": true,
-    "entrypointDiscovery": true
-  },
-
-  "metadata": {
-    "createdAt": "",
-    "updatedAt": "",
-    "manifestAuthor": "",
-    "generator": "YGit CLI",
-    "specification": "VPMS",
-    "specificationVersion": "1.0.0"
-  }
 }

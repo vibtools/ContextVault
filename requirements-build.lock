@@ -1,0 +1,3 @@
+# ContextVault v1.0 official build tooling
+# Install after requirements.lock for Windows release builds.
+Nuitka==4.1.3

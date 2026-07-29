@@ -30,13 +30,13 @@ Before contributing, please read the project documentation.
 
 At minimum, review:
 
-* PROJECT-OVERVIEW.md
-* PROJECT-ARCHITECTURE.md
-* PROJECT-CODING-STANDARDS.md
-* THREADING-STANDARD.md
-* ERROR-HANDLING-STANDARD.md
-* AI-DEVELOPMENT-GUIDELINES.md
-* AI-ZERO-FREEDOM-RULES.md
+* project/PROJECT-OVERVIEW.md
+* project/PROJECT-ARCHITECTURE.md
+* project/PROJECT-CODING-STANDARDS.md
+* project/THREADING-STANDARD.md
+* project/ERROR-HANDLING-STANDARD.md
+* project/AI-DEVELOPMENT-GUIDELINES.md
+* project/CONTEXTVAULT-AI-ZERO-FREEDOM-RULES.md
 
 These documents define the project's official standards.
 
@@ -225,10 +225,10 @@ Small, focused pull requests are preferred.
 
 All code must follow:
 
-* PROJECT-CODING-STANDARDS.md
-* PROJECT-ARCHITECTURE.md
-* THREADING-STANDARD.md
-* ERROR-HANDLING-STANDARD.md
+* project/PROJECT-CODING-STANDARDS.md
+* project/PROJECT-ARCHITECTURE.md
+* project/THREADING-STANDARD.md
+* project/ERROR-HANDLING-STANDARD.md
 
 Do not submit code that violates these standards.
 

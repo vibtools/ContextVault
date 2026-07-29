@@ -1,0 +1,477 @@
+{
+    "$defs": {
+        "AttachmentReference": {
+            "description": "Attachment metadata and source information.",
+            "properties": {
+                "id": {
+                    "title": "Id",
+                    "type": "string"
+                },
+                "sourceUrl": {
+                    "title": "Sourceurl",
+                    "type": "string"
+                },
+                "originalName": {
+                    "title": "Originalname",
+                    "type": "string"
+                },
+                "filePath": {
+                    "default": "",
+                    "title": "Filepath",
+                    "type": "string"
+                },
+                "mediaType": {
+                    "default": "",
+                    "title": "Mediatype",
+                    "type": "string"
+                },
+                "fileSize": {
+                    "anyOf": [
+                        {
+                            "type": "integer"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Filesize"
+                },
+                "sha256": {
+                    "default": "",
+                    "title": "Sha256",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "sourceUrl",
+                "originalName"
+            ],
+            "title": "AttachmentReference",
+            "type": "object"
+        },
+        "CitationReference": {
+            "description": "Citation or external reference discovered in a message.",
+            "properties": {
+                "id": {
+                    "title": "Id",
+                    "type": "string"
+                },
+                "url": {
+                    "title": "Url",
+                    "type": "string"
+                },
+                "label": {
+                    "default": "",
+                    "title": "Label",
+                    "type": "string"
+                },
+                "filePath": {
+                    "default": "",
+                    "title": "Filepath",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "url"
+            ],
+            "title": "CitationReference",
+            "type": "object"
+        },
+        "CodeReference": {
+            "description": "Extracted code block and eventual archive reference.",
+            "properties": {
+                "id": {
+                    "title": "Id",
+                    "type": "string"
+                },
+                "language": {
+                    "default": "text",
+                    "title": "Language",
+                    "type": "string"
+                },
+                "rawCode": {
+                    "title": "Rawcode",
+                    "type": "string"
+                },
+                "filePath": {
+                    "default": "",
+                    "title": "Filepath",
+                    "type": "string"
+                },
+                "characterCount": {
+                    "default": 0,
+                    "title": "Charactercount",
+                    "type": "integer"
+                },
+                "lineCount": {
+                    "default": 0,
+                    "title": "Linecount",
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "id",
+                "rawCode"
+            ],
+            "title": "CodeReference",
+            "type": "object"
+        },
+        "ConversationData": {
+            "description": "Lossless conversation JSON payload.",
+            "properties": {
+                "conversationId": {
+                    "title": "Conversationid",
+                    "type": "string"
+                },
+                "title": {
+                    "title": "Title",
+                    "type": "string"
+                },
+                "url": {
+                    "title": "Url",
+                    "type": "string"
+                },
+                "platformName": {
+                    "title": "Platformname",
+                    "type": "string"
+                },
+                "createdAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Createdat"
+                },
+                "messages": {
+                    "items": {
+                        "$ref": "#/$defs/ConversationMessage"
+                    },
+                    "title": "Messages",
+                    "type": "array"
+                }
+            },
+            "required": [
+                "conversationId",
+                "title",
+                "url",
+                "platformName",
+                "messages"
+            ],
+            "title": "ConversationData",
+            "type": "object"
+        },
+        "ConversationMessage": {
+            "description": "Self-contained lossless conversation message.",
+            "properties": {
+                "messageId": {
+                    "title": "Messageid",
+                    "type": "string"
+                },
+                "parentMessageId": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Parentmessageid"
+                },
+                "childMessageId": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Childmessageid"
+                },
+                "sequenceNumber": {
+                    "minimum": 1,
+                    "title": "Sequencenumber",
+                    "type": "integer"
+                },
+                "role": {
+                    "default": "unknown",
+                    "enum": [
+                        "user",
+                        "assistant",
+                        "system",
+                        "tool",
+                        "unknown"
+                    ],
+                    "title": "Role",
+                    "type": "string"
+                },
+                "plainText": {
+                    "default": "",
+                    "title": "Plaintext",
+                    "type": "string"
+                },
+                "markdown": {
+                    "default": "",
+                    "title": "Markdown",
+                    "type": "string"
+                },
+                "html": {
+                    "default": "",
+                    "title": "Html",
+                    "type": "string"
+                },
+                "codeReferences": {
+                    "items": {
+                        "$ref": "#/$defs/CodeReference"
+                    },
+                    "title": "Codereferences",
+                    "type": "array"
+                },
+                "imageReferences": {
+                    "items": {
+                        "$ref": "#/$defs/ImageReference"
+                    },
+                    "title": "Imagereferences",
+                    "type": "array"
+                },
+                "attachmentReferences": {
+                    "items": {
+                        "$ref": "#/$defs/AttachmentReference"
+                    },
+                    "title": "Attachmentreferences",
+                    "type": "array"
+                },
+                "tableReferences": {
+                    "items": {
+                        "$ref": "#/$defs/TableReference"
+                    },
+                    "title": "Tablereferences",
+                    "type": "array"
+                },
+                "citationReferences": {
+                    "items": {
+                        "$ref": "#/$defs/CitationReference"
+                    },
+                    "title": "Citationreferences",
+                    "type": "array"
+                },
+                "timestamp": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Timestamp"
+                },
+                "characterCount": {
+                    "default": 0,
+                    "title": "Charactercount",
+                    "type": "integer"
+                },
+                "wordCount": {
+                    "default": 0,
+                    "title": "Wordcount",
+                    "type": "integer"
+                },
+                "estimatedTokens": {
+                    "default": 0,
+                    "title": "Estimatedtokens",
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "messageId",
+                "sequenceNumber"
+            ],
+            "title": "ConversationMessage",
+            "type": "object"
+        },
+        "ImageReference": {
+            "description": "Conversation image metadata and source information.",
+            "properties": {
+                "id": {
+                    "title": "Id",
+                    "type": "string"
+                },
+                "sourceUrl": {
+                    "title": "Sourceurl",
+                    "type": "string"
+                },
+                "altText": {
+                    "default": "",
+                    "title": "Alttext",
+                    "type": "string"
+                },
+                "filePath": {
+                    "default": "",
+                    "title": "Filepath",
+                    "type": "string"
+                },
+                "mediaType": {
+                    "default": "",
+                    "title": "Mediatype",
+                    "type": "string"
+                },
+                "width": {
+                    "anyOf": [
+                        {
+                            "type": "integer"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Width"
+                },
+                "height": {
+                    "anyOf": [
+                        {
+                            "type": "integer"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Height"
+                },
+                "fileSize": {
+                    "anyOf": [
+                        {
+                            "type": "integer"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Filesize"
+                },
+                "sha256": {
+                    "default": "",
+                    "title": "Sha256",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "sourceUrl"
+            ],
+            "title": "ImageReference",
+            "type": "object"
+        },
+        "TableReference": {
+            "description": "Structured table representation.",
+            "properties": {
+                "id": {
+                    "title": "Id",
+                    "type": "string"
+                },
+                "headers": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Headers",
+                    "type": "array"
+                },
+                "rows": {
+                    "items": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "title": "Rows",
+                    "type": "array"
+                },
+                "html": {
+                    "default": "",
+                    "title": "Html",
+                    "type": "string"
+                },
+                "markdown": {
+                    "default": "",
+                    "title": "Markdown",
+                    "type": "string"
+                },
+                "jsonFilePath": {
+                    "default": "",
+                    "title": "Jsonfilepath",
+                    "type": "string"
+                },
+                "htmlFilePath": {
+                    "default": "",
+                    "title": "Htmlfilepath",
+                    "type": "string"
+                },
+                "markdownFilePath": {
+                    "default": "",
+                    "title": "Markdownfilepath",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id"
+            ],
+            "title": "TableReference",
+            "type": "object"
+        }
+    },
+    "description": "conversation.json document.",
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/ConversationData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "ConversationDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/conversation.schema.json"
+}

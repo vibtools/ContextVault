@@ -1,0 +1,107 @@
+{
+    "$defs": {
+        "StatisticsData": {
+            "description": "statistics.json payload.",
+            "properties": {
+                "totalMessages": {
+                    "title": "Totalmessages",
+                    "type": "integer"
+                },
+                "userMessages": {
+                    "title": "Usermessages",
+                    "type": "integer"
+                },
+                "assistantMessages": {
+                    "title": "Assistantmessages",
+                    "type": "integer"
+                },
+                "images": {
+                    "title": "Images",
+                    "type": "integer"
+                },
+                "attachments": {
+                    "title": "Attachments",
+                    "type": "integer"
+                },
+                "codeBlocks": {
+                    "title": "Codeblocks",
+                    "type": "integer"
+                },
+                "tables": {
+                    "title": "Tables",
+                    "type": "integer"
+                },
+                "citations": {
+                    "title": "Citations",
+                    "type": "integer"
+                },
+                "totalCharacters": {
+                    "title": "Totalcharacters",
+                    "type": "integer"
+                },
+                "totalWords": {
+                    "title": "Totalwords",
+                    "type": "integer"
+                },
+                "estimatedTokens": {
+                    "title": "Estimatedtokens",
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "totalMessages",
+                "userMessages",
+                "assistantMessages",
+                "images",
+                "attachments",
+                "codeBlocks",
+                "tables",
+                "citations",
+                "totalCharacters",
+                "totalWords",
+                "estimatedTokens"
+            ],
+            "title": "StatisticsData",
+            "type": "object"
+        }
+    },
+    "description": "statistics.json document.",
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/StatisticsData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "StatisticsDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/statistics.schema.json"
+}

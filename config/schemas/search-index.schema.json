@@ -1,0 +1,119 @@
+{
+    "$defs": {
+        "SearchIndexData": {
+            "description": "search-index.json payload.",
+            "properties": {
+                "keywords": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Keywords",
+                    "type": "array"
+                },
+                "topics": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Topics",
+                    "type": "array"
+                },
+                "importantTerms": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Importantterms",
+                    "type": "array"
+                },
+                "entityMapping": {
+                    "additionalProperties": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "title": "Entitymapping",
+                    "type": "object"
+                },
+                "messageMapping": {
+                    "items": {
+                        "$ref": "#/$defs/SearchMessageMapping"
+                    },
+                    "title": "Messagemapping",
+                    "type": "array"
+                },
+                "conversationMapping": {
+                    "additionalProperties": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "title": "Conversationmapping",
+                    "type": "object"
+                }
+            },
+            "title": "SearchIndexData",
+            "type": "object"
+        },
+        "SearchMessageMapping": {
+            "description": "Search-term-to-message relationship.",
+            "properties": {
+                "term": {
+                    "title": "Term",
+                    "type": "string"
+                },
+                "messageIds": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Messageids",
+                    "type": "array"
+                }
+            },
+            "required": [
+                "term"
+            ],
+            "title": "SearchMessageMapping",
+            "type": "object"
+        }
+    },
+    "description": "search-index.json document.",
+    "properties": {
+        "schemaVersion": {
+            "default": "1.0",
+            "title": "Schemaversion",
+            "type": "string"
+        },
+        "format": {
+            "default": "contextvault",
+            "title": "Format",
+            "type": "string"
+        },
+        "generatedBy": {
+            "default": "ContextVault",
+            "title": "Generatedby",
+            "type": "string"
+        },
+        "generatedAt": {
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
+        },
+        "version": {
+            "default": "1.0.0",
+            "title": "Version",
+            "type": "string"
+        },
+        "data": {
+            "$ref": "#/$defs/SearchIndexData"
+        }
+    },
+    "required": [
+        "generatedAt",
+        "data"
+    ],
+    "title": "SearchIndexDocument",
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/search-index.schema.json"
+}
