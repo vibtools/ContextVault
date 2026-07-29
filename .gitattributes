@@ -1,0 +1,135 @@
+# ==========================================================
+
+# ContextVault - Git Attributes
+
+#
+
+# Ensures consistent line endings, binary file handling,
+
+# language detection, and cross-platform compatibility.
+
+# ==========================================================
+
+# ----------------------------------------------------------------
+
+# Default
+
+# ----------------------------------------------------------------
+
+* text=auto
+
+# ----------------------------------------------------------------
+
+# Source Code
+
+# ----------------------------------------------------------------
+
+*.py           text eol=lf
+*.pyi          text eol=lf
+
+*.json         text eol=lf
+*.jsonc        text eol=lf
+
+*.yml          text eol=lf
+*.yaml         text eol=lf
+
+*.toml         text eol=lf
+
+*.md           text eol=lf
+
+*.txt          text eol=lf
+
+*.html         text eol=lf
+*.css          text eol=lf
+*.js           text eol=lf
+*.ts           text eol=lf
+
+*.xml          text eol=lf
+
+*.sh           text eol=lf
+
+# ----------------------------------------------------------------
+
+# Windows
+
+# ----------------------------------------------------------------
+
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+*.ps1          text eol=crlf
+
+# ----------------------------------------------------------------
+
+# Binary Files
+
+# ----------------------------------------------------------------
+
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.gif          binary
+*.webp         binary
+*.bmp          binary
+*.ico          binary
+*.svg          binary
+
+*.pdf          binary
+
+*.zip          binary
+*.7z           binary
+*.rar          binary
+
+*.woff         binary
+*.woff2        binary
+*.ttf          binary
+*.otf          binary
+
+*.exe          binary
+*.dll          binary
+*.so           binary
+*.dylib        binary
+
+# ----------------------------------------------------------------
+
+# Archives
+
+# ----------------------------------------------------------------
+
+*.ygit         binary
+
+# ----------------------------------------------------------------
+
+# Merge Behavior
+
+# ----------------------------------------------------------------
+
+CHANGELOG.md   merge
+LICENSE        merge
+README.md      merge
+
+# ----------------------------------------------------------------
+
+# Linguist Settings
+
+# ----------------------------------------------------------------
+
+docs/** linguist-documentation
+
+*.md linguist-language=Markdown
+
+# ----------------------------------------------------------------
+
+# Generated Files
+
+# ----------------------------------------------------------------
+
+dist/** export-ignore
+build/** export-ignore
+
+# ----------------------------------------------------------------
+
+# GitHub Metadata
+
+# ----------------------------------------------------------------
+
+.github/** text eol=lf
