@@ -16,6 +16,7 @@ from src.models.tasks import ApplicationEvent, EventType, TaskProgress, TaskSnap
 
 LOGGER = logging.getLogger(__name__)
 TaskFunction = Callable[["TaskContext"], Any]
+TaskDoneCallback = Callable[[], None]
 
 
 @dataclass(slots=True)
@@ -124,6 +125,23 @@ class TaskManager:
             self._records[task_id] = record
             record.future = self.executor.submit(self._execute, record, function)
             return task_id
+
+    def add_done_callback(self, task_id: str, callback: TaskDoneCallback) -> bool:
+        """Invoke *callback* once when the managed future reaches a terminal state."""
+        with self._lock:
+            record = self._records.get(task_id)
+            future = record.future if record is not None else None
+        if future is None:
+            return False
+
+        def invoke(_future: concurrent.futures.Future[Any]) -> None:
+            try:
+                callback()
+            except Exception:
+                LOGGER.exception("Task completion callback failed: %s", task_id)
+
+        future.add_done_callback(invoke)
+        return True
 
     def cancel(self, task_id: str) -> bool:
         """Request cooperative cancellation of a queued or running task."""

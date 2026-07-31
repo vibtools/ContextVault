@@ -23,6 +23,56 @@ from src.utils.paths import application_root
 LOGGER = logging.getLogger(__name__)
 
 
+class _BrowserWorkflowGate:
+    """Provide one exclusive lease for browser-mutating application workflows."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._owner_token: object | None = None
+        self._owner_name = ""
+
+    def acquire(self, workflow_name: str) -> object:
+        """Reserve the managed browser for one composite workflow."""
+        token = object()
+        with self._lock:
+            if self._owner_token is not None:
+                raise RuntimeError(
+                    f"Cannot start '{workflow_name}' while '{self._owner_name}' is already "
+                    "using the managed browser. Wait for it to finish or cancel it first."
+                )
+            self._owner_token = token
+            self._owner_name = workflow_name
+        return token
+
+    def release(self, token: object) -> None:
+        """Release only the lease owned by *token*."""
+        with self._lock:
+            if self._owner_token is token:
+                self._owner_token = None
+                self._owner_name = ""
+
+    @property
+    def active_workflow(self) -> str:
+        """Return the current exclusive workflow name, if any."""
+        with self._lock:
+            return self._owner_name
+
+
+def _deduplicate_conversations(
+    items: list[ConversationListItem],
+) -> list[ConversationListItem]:
+    """Preserve selection order while removing duplicate conversation identities."""
+    output: list[ConversationListItem] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        identity = (item.conversation_id.strip(), item.url.strip())
+        if identity in seen:
+            continue
+        seen.add(identity)
+        output.append(item)
+    return output
+
+
 class ApplicationController:
     """Coordinate UI actions without performing heavy work on the UI thread."""
 
@@ -38,6 +88,7 @@ class ApplicationController:
         self._conversations: list[ConversationListItem] = []
         self._current_export_task: str | None = None
         self._resume_items: list[ConversationListItem] = []
+        self._browser_workflow_gate = _BrowserWorkflowGate()
         self._resume_lock = threading.Lock()
         self._settings_lock = threading.Lock()
         self._shutdown_lock = threading.Lock()
@@ -73,7 +124,7 @@ class ApplicationController:
         return self._submit_browser_task("Open conversation", "open_conversation", url=item.url)
 
     def scan_conversations(self) -> str:
-        """Scan the ChatGPT sidebar in the browser worker."""
+        """Scan the ChatGPT sidebar in one exclusive browser workflow."""
         def work(context: TaskContext) -> dict[str, Any]:
             context.report_progress("Scanning conversations", 0.0, force=True)
 
@@ -93,16 +144,23 @@ class ApplicationController:
                 "count": len(items),
             }
             context.emit(EventType.CONVERSATIONS, payload)
-            context.report_progress("Scan complete", 100.0, f"{len(items)} conversations", len(items), len(items), force=True)
+            context.report_progress(
+                "Scan complete",
+                100.0,
+                f"{len(items)} conversations",
+                len(items),
+                len(items),
+                force=True,
+            )
             return payload
 
-        return self.task_manager.submit("Scan conversations", work)
+        return self._submit_exclusive_browser_workflow("Scan conversations", work)
 
     def export_conversations(self, items: list[ConversationListItem]) -> str:
-        """Export selected conversations sequentially to preserve browser ownership."""
+        """Export selected conversations sequentially under one exclusive browser lease."""
         if not items:
             raise ValueError("Select at least one conversation to export.")
-        selected = list(items)
+        selected = _deduplicate_conversations(items)
         destination = self._resolved_export_root()
         settings_snapshot = self.get_settings()
 
@@ -149,7 +207,7 @@ class ApplicationController:
             context.emit(EventType.HISTORY, {"items": self.history_service.list_records()})
             return {"exports": results, "count": len(results)}
 
-        task_id = self.task_manager.submit("Export conversations", work)
+        task_id = self._submit_exclusive_browser_workflow("Export conversations", work)
         self._current_export_task = task_id
         return task_id
 
@@ -296,8 +354,8 @@ class ApplicationController:
         return self.task_manager.submit("Refresh history", work)
 
     def browser_status(self) -> str:
-        """Request a browser status update."""
-        return self._submit_browser_task("Browser status", "status")
+        """Request a read-only browser status update."""
+        return self._submit_browser_task("Browser status", "status", exclusive=False)
 
     def shutdown(self) -> None:
         """Cancel work, close browser resources, and stop the executor safely."""
@@ -311,7 +369,14 @@ class ApplicationController:
         finally:
             self.task_manager.shutdown()
 
-    def _submit_browser_task(self, task_name: str, command: str, **kwargs: Any) -> str:
+    def _submit_browser_task(
+        self,
+        task_name: str,
+        command: str,
+        *,
+        exclusive: bool = True,
+        **kwargs: Any,
+    ) -> str:
         def work(context: TaskContext) -> dict[str, Any]:
             context.report_progress(task_name, 10.0, force=True)
             result = self._wait(self.browser_worker.submit(command, **kwargs))
@@ -319,7 +384,31 @@ class ApplicationController:
             context.report_progress(task_name, 100.0, force=True)
             return result
 
+        if exclusive:
+            return self._submit_exclusive_browser_workflow(task_name, work)
         return self.task_manager.submit(task_name, work)
+
+    def _submit_exclusive_browser_workflow(
+        self,
+        workflow_name: str,
+        function: Any,
+    ) -> str:
+        """Submit one browser workflow and release its lease on every terminal path."""
+        lease = self._browser_workflow_gate.acquire(workflow_name)
+        try:
+            task_id = self.task_manager.submit(workflow_name, function)
+            if not self.task_manager.add_done_callback(
+                task_id,
+                lambda: self._browser_workflow_gate.release(lease),
+            ):
+                self.task_manager.cancel(task_id)
+                raise RuntimeError(
+                    f"Unable to register lifecycle cleanup for '{workflow_name}'."
+                )
+            return task_id
+        except Exception:
+            self._browser_workflow_gate.release(lease)
+            raise
 
     def _resolved_export_root(self) -> Path:
         configured = Path(self.get_settings().export.default_folder).expanduser()

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import io
+import inspect
 import logging
 import mimetypes
+import os
 import shutil
 import tempfile
 import threading
@@ -13,7 +15,7 @@ import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from PIL import Image, UnidentifiedImageError
@@ -54,7 +56,9 @@ from src.utils.json_io import write_json
 from src.utils.security import sanitize_filename, unique_path
 
 LOGGER = logging.getLogger(__name__)
-ResourceLoader = Callable[[str], dict[str, Any]]
+ResourceKind = Literal["image", "attachment"]
+ResourceLoader = Callable[..., dict[str, Any]]
+ResourceInvoker = Callable[[str, ResourceKind], dict[str, Any]]
 ProgressReporter = Callable[[str, float, str, int, int], None]
 
 
@@ -88,10 +92,7 @@ class ArchiveBuilder:
 
         archive_name = self._archive_name(conversation, settings)
         final_root = destination_root / archive_name
-        if final_root.exists() and not settings.export.overwrite:
-            final_root = unique_path(final_root)
-        staging_root = destination_root / f".{final_root.name}.partial-{uuid4().hex}"
-        staging_root.mkdir(parents=False, exist_ok=False)
+        staging_root = Path(tempfile.mkdtemp(prefix=".cv-stage-", dir=destination_root))
         export_log: list[str] = []
         try:
             self._create_structure(staging_root)
@@ -165,11 +166,12 @@ class ArchiveBuilder:
             if settings.export.verify_export and not final_validation.is_valid:
                 raise RuntimeError("Archive validation failed: " + "; ".join(final_validation.errors))
             self._check_cancelled(cancellation_event)
-            self._publish_staging(
+            final_root = self._publish_staging(
                 staging_root,
                 final_root,
                 destination_root,
                 overwrite=settings.export.overwrite,
+                collision_identity=conversation.conversation_id,
             )
             zip_path: Path | None = None
             if settings.export.compress:
@@ -227,6 +229,7 @@ class ArchiveBuilder:
             for message in conversation.messages
         )
         completed = 0
+        load_resource = _resource_loader_invoker(resource_loader)
         for message in conversation.messages:
             self._check_cancelled(cancellation_event)
             if settings.assets.code:
@@ -290,7 +293,7 @@ class ArchiveBuilder:
 
             if settings.assets.images:
                 for image_reference in message.image_references:
-                    payload = resource_loader(image_reference.source_url)
+                    payload = load_resource(image_reference.source_url, "image")
                     data = _payload_bytes(payload)
                     media_type = str(payload.get("contentType") or "")
                     image_format, width, height = _inspect_image(data)
@@ -315,7 +318,7 @@ class ArchiveBuilder:
 
             if settings.assets.attachments:
                 for attachment in message.attachment_references:
-                    payload = resource_loader(attachment.source_url)
+                    payload = load_resource(attachment.source_url, "attachment")
                     data = _payload_bytes(payload)
                     suggested = str(payload.get("suggestedFilename") or attachment.original_name or "attachment")
                     filename = sanitize_filename(suggested)
@@ -366,25 +369,23 @@ class ArchiveBuilder:
         )
         for attempt in retrying:
             with attempt:
-                temporary: Path | None = None
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    prefix=".cv-",
+                    suffix=".tmp",
+                    dir=target.parent,
+                    delete=False,
+                ) as stream:
+                    temporary = Path(stream.name)
+                    stream.write(data)
                 try:
-                    with tempfile.NamedTemporaryFile(
-                        mode="wb",
-                        prefix=".cv-",
-                        suffix=".tmp",
-                        dir=target.parent,
-                        delete=False,
-                    ) as stream:
-                        temporary = Path(stream.name)
-                        stream.write(data)
                     if temporary.read_bytes() != data:
                         raise RuntimeError(f"Immediate byte verification failed for {description}.")
                     temporary.replace(target)
                     if target.read_bytes() != data:
                         raise RuntimeError(f"Published byte verification failed for {description}.")
                 finally:
-                    if temporary is not None:
-                        temporary.unlink(missing_ok=True)
+                    temporary.unlink(missing_ok=True)
 
     def _build_documents(
         self,
@@ -607,21 +608,40 @@ class ArchiveBuilder:
         allowed_parent: Path,
         *,
         overwrite: bool,
-    ) -> None:
-        """Publish a validated archive without destroying the previous version on failure."""
+        collision_identity: str,
+    ) -> Path:
+        """Publish a validated archive without a time-of-check/time-of-use collision."""
         parent = allowed_parent.resolve()
         if staging_root.parent.resolve() != parent or final_root.parent.resolve() != parent:
             raise ValueError("Refusing to publish an archive outside the configured export root.")
-        if staging_root.is_symlink() or final_root.is_symlink():
-            raise ValueError("Refusing to publish through a symbolic link.")
+        if staging_root.is_symlink():
+            raise ValueError("Refusing to publish a symbolic-link staging directory.")
+
+        if not overwrite:
+            for candidate in _archive_publish_candidates(final_root, collision_identity):
+                if candidate.parent.resolve() != parent:
+                    raise ValueError("Refusing to publish an archive outside the configured export root.")
+                if _path_lexists(candidate):
+                    continue
+                try:
+                    staging_root.rename(candidate)
+                    return candidate
+                except OSError:
+                    if _path_lexists(candidate):
+                        continue
+                    raise
+            raise FileExistsError(
+                f"Unable to allocate a unique archive name for: {final_root.name}"
+            )
+
+        if final_root.is_symlink():
+            raise ValueError("Refusing to overwrite an archive through a symbolic link.")
 
         backup_root: Path | None = None
         if final_root.exists():
-            if not overwrite:
-                raise FileExistsError(f"Archive already exists: {final_root}")
             if not final_root.is_dir():
                 raise ValueError(f"Refusing to overwrite a non-directory archive target: {final_root}")
-            backup_root = parent / f".{final_root.name}.backup-{uuid4().hex}"
+            backup_root = _short_unique_path(parent, ".cv-backup-")
             final_root.replace(backup_root)
 
         try:
@@ -635,6 +655,7 @@ class ArchiveBuilder:
                 shutil.rmtree(backup_root)
             except OSError:
                 LOGGER.warning("Unable to remove replaced archive backup: %s", backup_root, exc_info=True)
+        return final_root
 
     @staticmethod
     def _compress(
@@ -646,7 +667,14 @@ class ArchiveBuilder:
         zip_path = root.with_suffix(".zip")
         if zip_path.exists() and not overwrite:
             zip_path = unique_path(zip_path)
-        temporary = zip_path.parent / f".{zip_path.name}.partial-{uuid4().hex}"
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix=".cv-zip-",
+            suffix=".tmp",
+            dir=zip_path.parent,
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
         try:
             with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
                 for path in sorted(root.rglob("*")):
@@ -669,6 +697,88 @@ class ArchiveBuilder:
     def _log(output: list[str], message: str) -> None:
         output.append(f"{datetime.now(UTC).isoformat().replace('+00:00', 'Z')} {message}")
 
+
+def _archive_publish_candidates(
+    base_path: Path,
+    collision_identity: str,
+):
+    """Yield deterministic, Windows-safe archive targets for collision recovery."""
+    yield base_path
+    identity = _archive_identity_suffix(collision_identity)
+    yield base_path.with_name(_archive_name_with_suffix(base_path.name, f" #{identity}"))
+    for index in range(2, 10_001):
+        yield base_path.with_name(
+            _archive_name_with_suffix(base_path.name, f" #{identity}-{index}")
+        )
+
+
+def _archive_identity_suffix(value: str) -> str:
+    """Return a stable short identity used only when an archive title collides."""
+    compact = "".join(character for character in value if character.isalnum())
+    if compact:
+        return compact[:8]
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+
+
+def _archive_name_with_suffix(base_name: str, suffix: str) -> str:
+    """Append a required suffix without allowing filename truncation to remove it."""
+    max_length = 120
+    available = max(1, max_length - len(suffix))
+    clean_base = sanitize_filename(base_name, max_length=available)
+    return sanitize_filename(f"{clean_base}{suffix}", max_length=max_length)
+
+
+def _path_lexists(path: Path) -> bool:
+    """Return True for files, directories, and broken symbolic links."""
+    return os.path.lexists(path)
+
+
+def _short_unique_path(parent: Path, prefix: str) -> Path:
+    """Return a short non-existing sibling path without repeating the final archive name."""
+    for _ in range(32):
+        candidate = parent / f"{prefix}{uuid4().hex[:12]}"
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(f"Unable to allocate a temporary path in {parent}.")
+
+
+
+def _resource_loader_invoker(resource_loader: ResourceLoader) -> ResourceInvoker:
+    """Adapt legacy one-argument loaders while preserving typed internal routing."""
+    try:
+        parameters = list(inspect.signature(resource_loader).parameters.values())
+    except (TypeError, ValueError):
+        return lambda source_url, resource_kind: resource_loader(source_url, resource_kind)
+
+    named_kind = next(
+        (parameter for parameter in parameters if parameter.name == "resource_kind"),
+        None,
+    )
+    if named_kind is not None:
+        if named_kind.kind is inspect.Parameter.KEYWORD_ONLY:
+            return lambda source_url, resource_kind: resource_loader(
+                source_url,
+                resource_kind=resource_kind,
+            )
+        return lambda source_url, resource_kind: resource_loader(source_url, resource_kind)
+
+    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters):
+        return lambda source_url, resource_kind: resource_loader(
+            source_url,
+            resource_kind=resource_kind,
+        )
+    if any(parameter.kind is inspect.Parameter.VAR_POSITIONAL for parameter in parameters):
+        return lambda source_url, resource_kind: resource_loader(source_url, resource_kind)
+
+    positional = [
+        parameter
+        for parameter in parameters
+        if parameter.kind
+        in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+    ]
+    if len(positional) >= 2:
+        return lambda source_url, resource_kind: resource_loader(source_url, resource_kind)
+    return lambda source_url, _resource_kind: resource_loader(source_url)
 
 def _payload_bytes(payload: dict[str, Any]) -> bytes:
     value = payload.get("content")

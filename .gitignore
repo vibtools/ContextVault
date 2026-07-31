@@ -28,11 +28,15 @@ artifacts/
 data/settings.json
 data/export_history.json
 data/checkpoints/
+data/chrome-user-data/
 exports/
 logs/
 *.log
 *.partial
+*.partial-*
 *.invalid
+*.invalid-*
+.cv-*.tmp
 
 # IDE and operating system
 .vscode/
@@ -40,3 +44,5 @@ logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+/project/

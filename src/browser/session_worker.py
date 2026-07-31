@@ -142,6 +142,10 @@ class BrowserSessionWorker:
                         command.future.set_result(result)
                 except asyncio.CancelledError:
                     command.future.cancel()
+                except InterruptedError as exc:
+                    LOGGER.info("Browser command cancelled: %s", command.name)
+                    if not command.future.done():
+                        command.future.set_exception(exc)
                 except Exception as exc:
                     LOGGER.exception("Browser command failed: %s", command.name)
                     if not command.future.done():

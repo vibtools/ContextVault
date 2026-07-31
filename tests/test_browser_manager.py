@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from src.browser.browser_manager import (
     BrowserManager,
     BrowserProfileInUseError,
+    _sidebar_conversation_title,
     resolve_launch_user_data_dir,
 )
 from src.models.settings import BrowserSettings
@@ -64,6 +65,58 @@ class _FakePlaywrightStarter:
 
     async def start(self) -> _FakePlaywright:
         return self.playwright
+
+
+class ConversationSidebarTitleTests(unittest.TestCase):
+    def test_visible_sidebar_title_wins_over_accessibility_context(self) -> None:
+        title = _sidebar_conversation_title(
+            {
+                "visibleTitle": "YGIT 05_Project-Context&Update",
+                "attributeTitle": "",
+                "ariaLabel": "YGIT 05_Project-Context&Update, chat in project ygit-project",
+            }
+        )
+        self.assertEqual(title, "YGIT 05_Project-Context&Update")
+
+    def test_project_context_is_removed_from_aria_fallback(self) -> None:
+        title = _sidebar_conversation_title(
+            {
+                "visibleTitle": "",
+                "attributeTitle": "",
+                "ariaLabel": "Release Audit, chat in project ContextVault",
+            }
+        )
+        self.assertEqual(title, "Release Audit")
+
+    def test_visible_title_whitespace_is_compacted_without_rewriting_content(self) -> None:
+        title = _sidebar_conversation_title(
+            {
+                "visibleTitle": "  Exact\nChat   Title  ",
+                "attributeTitle": "",
+                "ariaLabel": "",
+            }
+        )
+        self.assertEqual(title, "Exact Chat Title")
+
+    def test_full_title_attribute_wins_over_truncated_visible_text(self) -> None:
+        title = _sidebar_conversation_title(
+            {
+                "visibleTitle": "Long production chat...",
+                "attributeTitle": "Long production chat title",
+                "ariaLabel": "Long production chat title, chat in project ContextVault",
+            }
+        )
+        self.assertEqual(title, "Long production chat title")
+
+    def test_project_context_is_removed_from_visible_title_too(self) -> None:
+        title = _sidebar_conversation_title(
+            {
+                "visibleTitle": "Release Audit, chat in project ContextVault",
+                "attributeTitle": "",
+                "ariaLabel": "Release Audit, chat in project ContextVault",
+            }
+        )
+        self.assertEqual(title, "Release Audit")
 
 
 class BrowserManagerLaunchTests(unittest.TestCase):

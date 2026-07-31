@@ -183,6 +183,11 @@ class ArchiveValidator:
                 errors.append(f"Message {message.message_id} parentMessageId does not match message order.")
             if message.child_message_id != expected_child:
                 errors.append(f"Message {message.message_id} childMessageId does not match message order.")
+            if message.capture_status == "skipped":
+                detail = message.capture_error or "capture retries were exhausted"
+                warnings.append(
+                    f"Message {message.message_id} contains degraded content preserved after capture retries: {detail}"
+                )
 
             expected_counts = {
                 "characterCount": (message.character_count, len(message.plain_text)),

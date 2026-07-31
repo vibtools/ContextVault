@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import concurrent.futures
 import io
 import tempfile
 import threading
 import unittest
 from datetime import UTC, datetime
-from pathlib import Path
 from unittest.mock import patch
+from pathlib import Path
 
 from PIL import Image
 
@@ -26,6 +27,11 @@ class ArchiveTests(unittest.TestCase):
             url="https://chatgpt.com/c/sample-id",
             title="Sample Conversation",
             exported_at=datetime(2026, 7, 28, tzinfo=UTC),
+            exported_at_local=datetime(2026, 7, 28, tzinfo=UTC),
+            browser_name="Google Chrome",
+            browser_version="138.0",
+            browser_profile="Default",
+            estimated_size=len(html.encode("utf-8")),
         )
         image = Image.new("RGB", (20, 10), (255, 255, 255))
         buffer = io.BytesIO()
@@ -39,41 +45,6 @@ class ArchiveTests(unittest.TestCase):
             return {"content": b"%PDF-1.4\n% ContextVault test\n", "contentType": "application/pdf", "suggestedFilename": "spec.pdf"}
         raise AssertionError(f"Unexpected resource: {url}")
 
-    def test_verified_byte_write_uses_short_same_directory_temporary_name(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory) / ("a" * 75) / ("b" * 75)
-            target = parent / "0002-b8f44655-aaf7-4087-b7af-114f5f37dc32-code-001.txt"
-            payload = b"line-one\r\nline-two\r\n"
-            legacy_temporary = target.parent / f".{target.name}.partial-{'0' * 32}"
-            self.assertLess(len(str(target)), 260)
-            self.assertGreaterEqual(len(str(legacy_temporary)), 260)
-
-            created_paths: list[Path] = []
-            real_named_temporary_file = tempfile.NamedTemporaryFile
-
-            def tracked_named_temporary_file(*args: object, **kwargs: object):
-                stream = real_named_temporary_file(*args, **kwargs)
-                created_paths.append(Path(stream.name))
-                return stream
-
-            with patch(
-                "src.core.archive_builder.tempfile.NamedTemporaryFile",
-                side_effect=tracked_named_temporary_file,
-            ):
-                ArchiveBuilder._write_verified_bytes(
-                    target,
-                    payload,
-                    attempts=1,
-                    description="long-path regression code reference",
-                )
-
-            self.assertEqual(target.read_bytes(), payload)
-            self.assertEqual(len(created_paths), 1)
-            self.assertEqual(created_paths[0].parent, target.parent)
-            self.assertLess(len(str(created_paths[0])), 260)
-            self.assertNotIn(target.name, created_paths[0].name)
-            self.assertFalse(created_paths[0].exists())
-
     def test_build_validate_and_rebuild_summary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = ApplicationSettings.model_validate(
@@ -85,7 +56,8 @@ class ArchiveTests(unittest.TestCase):
                         "overwrite": False,
                         "compress": True,
                         "verifyExport": True,
-                    }
+                    },
+                    "assets": {"attachments": True},
                 }
             )
             result = ArchiveBuilder().build(
@@ -143,6 +115,78 @@ class ArchiveTests(unittest.TestCase):
                 )
             self.assertEqual(marker.read_text(encoding="utf-8"), "preserve me")
             self.assertFalse(any(".partial-" in path.name for path in destination.iterdir()))
+
+    def test_non_overwrite_collision_uses_stable_conversation_identity_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            settings = ApplicationSettings.model_validate(
+                {
+                    "export": {
+                        "defaultFolder": directory,
+                        "archiveName": "{title}",
+                        "autoCreateFolder": True,
+                        "overwrite": False,
+                        "compress": False,
+                        "verifyExport": True,
+                    }
+                }
+            )
+            builder = ArchiveBuilder()
+            first = builder.build(
+                conversation=self.conversation,
+                settings=settings,
+                destination_root=destination,
+                resource_loader=self.resource_loader,
+                cancellation_event=threading.Event(),
+            )
+            second = builder.build(
+                conversation=self.conversation,
+                settings=settings,
+                destination_root=destination,
+                resource_loader=self.resource_loader,
+                cancellation_event=threading.Event(),
+            )
+
+            self.assertEqual(Path(first["archivePath"]).name, "Sample Conversation")
+            self.assertEqual(
+                Path(second["archivePath"]).name,
+                "Sample Conversation #sampleid",
+            )
+            self.assertTrue(ArchiveValidator().validate(Path(first["archivePath"])).is_valid)
+            self.assertTrue(ArchiveValidator().validate(Path(second["archivePath"])).is_valid)
+
+    def test_concurrent_publish_collision_never_discards_valid_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            staging_roots: list[Path] = []
+            for index in range(2):
+                staging = Path(tempfile.mkdtemp(prefix=".cv-stage-", dir=destination))
+                (staging / "marker.txt").write_text(str(index), encoding="utf-8")
+                staging_roots.append(staging)
+
+            barrier = threading.Barrier(2)
+
+            def publish(staging: Path) -> Path:
+                barrier.wait(timeout=3)
+                return ArchiveBuilder._publish_staging(
+                    staging,
+                    destination / "Shared Title",
+                    destination,
+                    overwrite=False,
+                    collision_identity="6a5e3c13-f558-83e9-8419-69886adcb4b0",
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                published = list(executor.map(publish, staging_roots))
+
+            self.assertEqual(
+                {path.name for path in published},
+                {"Shared Title", "Shared Title #6a5e3c13"},
+            )
+            self.assertEqual(
+                sorted((path / "marker.txt").read_text(encoding="utf-8") for path in published),
+                ["0", "1"],
+            )
 
     def test_overwrite_replaces_folder_and_zip_without_numbered_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -214,6 +258,56 @@ class ArchiveTests(unittest.TestCase):
             self.assertFalse(validation.is_valid)
             self.assertTrue(any("missing hash entries" in error for error in validation.errors))
 
+    def test_verified_byte_writer_uses_short_same_directory_temporary_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            index = 0
+            desired_parent_length = 225
+            while len(str(parent)) < desired_parent_length:
+                remaining = desired_parent_length - len(str(parent)) - 1
+                if remaining <= 0:
+                    break
+                component_length = min(40, remaining)
+                prefix = f"s{index:02d}-"
+                component = (prefix + ("x" * component_length))[:component_length]
+                parent /= component
+                index += 1
+            parent.mkdir(parents=True)
+            target = parent / "code-block.txt"
+            legacy_temporary = parent / f".{target.name}.partial-{'a' * 32}"
+            self.assertLess(len(str(target)), 260)
+            self.assertGreaterEqual(len(str(legacy_temporary)), 260)
+
+            created: list[Path] = []
+            original = tempfile.NamedTemporaryFile
+
+            def guarded_temporary(*args: object, **kwargs: object):
+                stream = original(*args, **kwargs)
+                path = Path(stream.name)
+                created.append(path)
+                if len(str(path)) >= 260:
+                    stream.close()
+                    path.unlink(missing_ok=True)
+                    raise FileNotFoundError(f"Simulated Windows MAX_PATH rejection: {path}")
+                return stream
+
+            payload = b"line1\r\nline2\r\n"
+            with patch(
+                "src.core.archive_builder.tempfile.NamedTemporaryFile",
+                side_effect=guarded_temporary,
+            ):
+                ArchiveBuilder._write_verified_bytes(
+                    target,
+                    payload,
+                    attempts=1,
+                    description="long-path code block",
+                )
+
+            self.assertEqual(target.read_bytes(), payload)
+            self.assertTrue(created)
+            self.assertTrue(all(len(str(path)) < 260 for path in created))
+            self.assertFalse(any(path.exists() for path in created))
+
     def test_cancellation_removes_staging_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             cancelled = threading.Event()
@@ -237,6 +331,11 @@ class ArchiveValidatorRegressionTests(unittest.TestCase):
             url="https://chatgpt.com/c/validator-regression",
             title="Validator Regression",
             exported_at=datetime(2026, 7, 28, tzinfo=UTC),
+            exported_at_local=datetime(2026, 7, 28, tzinfo=UTC),
+            browser_name="Google Chrome",
+            browser_version="138.0",
+            browser_profile="Default",
+            estimated_size=len(html.encode("utf-8")),
         )
         image = Image.new("RGB", (4, 4), (255, 255, 255))
         buffer = io.BytesIO()

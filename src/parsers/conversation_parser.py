@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
@@ -28,6 +28,8 @@ from src.utils.text import estimated_tokens, word_count
 LOGGER = logging.getLogger(__name__)
 _LANGUAGE_CLASS_PATTERN = re.compile(r"(?:language|lang)-([A-Za-z0-9_+#.-]+)")
 _CONVERSATION_ID_PATTERN = re.compile(r"/(?:c|conversation)/([^/?#]+)")
+_FAVICON_PATH_NAMES = frozenset({"favicon", "favicons", "favicon.ico"})
+_FAVICON_QUERY_KEYS = frozenset({"domain", "domain_url", "host", "site", "url"})
 
 
 class ConversationParser:
@@ -35,6 +37,7 @@ class ConversationParser:
 
     MESSAGE_SELECTORS = (
         "[data-message-author-role]",
+        "[data-message-id]",
         "[data-testid^='conversation-turn']",
         "main article",
     )
@@ -82,16 +85,125 @@ class ConversationParser:
             seen_message_ids.add(message.message_id)
             messages.append(message)
 
-        self._resequence_and_link(messages)
-        combined_text = "\n".join(message.plain_text for message in messages)
+        return self.build_record(
+            messages=messages,
+            url=url,
+            title=title,
+            platform_name=platform_name,
+            exported_at=exported_at,
+            exported_at_local=exported_at_local,
+            export_id=export_id,
+            browser_name=browser_name,
+            browser_version=browser_version,
+            browser_profile=browser_profile,
+            chatgpt_workspace=chatgpt_workspace,
+            chatgpt_model=chatgpt_model,
+            estimated_size=estimated_size,
+            source_message_count=source_message_count,
+            source_asset_counts=source_asset_counts,
+            readiness=readiness,
+            created_at=self._conversation_created_at(soup),
+        )
+
+    def parse_message_fragment(
+        self,
+        *,
+        html: str,
+        sequence_number: int,
+        conversation_id: str,
+        base_url: str,
+        captured_at: datetime | None = None,
+        source_key: str = "",
+        source_signature: str = "",
+        capture_attempts: int = 1,
+    ) -> ConversationMessage:
+        """Parse one observed message fragment into a validated domain message."""
+        soup = BeautifulSoup(html, "html.parser")
+        node = self._first_message_node(soup)
+        if node is None:
+            raise ValueError("Message fragment does not contain a supported ChatGPT message container.")
+        message = self._parse_message(
+            node=node,
+            sequence_number=sequence_number,
+            conversation_id=conversation_id,
+            base_url=base_url,
+        )
+        message.captured_at = captured_at or datetime.now(UTC)
+        message.source_key = source_key or message.message_id
+        message.source_signature = source_signature
+        message.capture_attempts = max(1, int(capture_attempts))
+        message.capture_status = "verified"
+        message.capture_error = None
+        if message.timestamp is not None:
+            message.timestamp_source = "message_timestamp"
+        return message
+
+    def build_record(
+        self,
+        *,
+        messages: list[ConversationMessage],
+        url: str,
+        title: str,
+        exported_at: datetime,
+        platform_name: str = "ChatGPT",
+        exported_at_local: datetime | None = None,
+        export_id: str | None = None,
+        browser_name: str = "unavailable",
+        browser_version: str = "unavailable",
+        browser_profile: str = "unavailable",
+        chatgpt_workspace: str | None = None,
+        chatgpt_model: str | None = None,
+        estimated_size: int = 0,
+        source_message_count: int | None = None,
+        source_asset_counts: dict[str, int] | None = None,
+        readiness: dict[str, Any] | None = None,
+        capture_warnings: list[str] | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
+    ) -> ConversationRecord:
+        """Build a complete conversation from ordered verified/degraded messages."""
+        ordered = [message.model_copy(deep=True) for message in messages]
+        self._resequence_and_link(ordered)
+
+        inferred_created = created_at
+        inferred_updated = updated_at
+        timestamp_source = "unknown"
+        if ordered and inferred_created is None and inferred_updated is None:
+            first = ordered[0]
+            last = ordered[-1]
+            if (
+                first.timestamp is not None
+                and last.timestamp is not None
+                and first.timestamp_source == "message_timestamp"
+                and last.timestamp_source == "message_timestamp"
+            ):
+                inferred_created = first.timestamp
+                inferred_updated = last.timestamp
+                timestamp_source = "message_timestamp"
+        elif inferred_created is not None and inferred_updated is not None:
+            timestamp_source = "page_state"
+
+        duration_seconds: int | None = None
+        if inferred_created is not None and inferred_updated is not None:
+            delta = int((inferred_updated - inferred_created).total_seconds())
+            if delta >= 0:
+                duration_seconds = delta
+
+        local_export = exported_at_local or exported_at.astimezone()
+        timezone = _timezone_name(local_export)
+        combined_text = "\n".join(message.plain_text for message in ordered)
         record_data: dict[str, Any] = {
-            "conversation_id": conversation_id,
+            "conversation_id": self._conversation_id(url, title),
             "title": title.strip() or "Untitled Conversation",
             "url": url,
             "platform_name": platform_name,
-            "created_at": self._conversation_created_at(soup),
+            "created_at": inferred_created,
+            "updated_at": inferred_updated,
             "exported_at": exported_at,
-            "exported_at_local": exported_at_local,
+            "exported_at_local": local_export,
+            "timezone": timezone,
+            "timestamp_source": timestamp_source,
+            "duration_seconds": duration_seconds,
             "language": self._detect_language(combined_text),
             "browser_name": browser_name or "unavailable",
             "browser_version": browser_version or "unavailable",
@@ -102,11 +214,20 @@ class ConversationParser:
             "source_message_count": source_message_count,
             "source_asset_counts": dict(source_asset_counts or {}),
             "readiness": dict(readiness or {}),
-            "messages": messages,
+            "skipped_message_count": sum(message.capture_status == "skipped" for message in ordered),
+            "capture_warnings": list(capture_warnings or []),
+            "messages": ordered,
         }
         if export_id:
             record_data["export_id"] = export_id
         return ConversationRecord.model_validate(record_data)
+
+    def _first_message_node(self, soup: BeautifulSoup) -> Tag | None:
+        for selector in self.MESSAGE_SELECTORS:
+            candidate = soup.select_one(selector)
+            if isinstance(candidate, Tag):
+                return candidate
+        return None
 
     def _find_message_nodes(self, soup: BeautifulSoup) -> list[Tag]:
         for selector in self.MESSAGE_SELECTORS:
@@ -237,6 +358,9 @@ class ConversationParser:
             if not source:
                 continue
             absolute_source = urljoin(base_url, source)
+            if _is_decorative_favicon_source(absolute_source):
+                LOGGER.debug("Decorative favicon excluded from image assets: %s", absolute_source)
+                continue
             if absolute_source in seen:
                 continue
             seen.add(absolute_source)
@@ -378,11 +502,9 @@ class ConversationParser:
         for value in candidates:
             if not value:
                 continue
-            text = str(value).strip().replace("Z", "+00:00")
-            try:
-                return datetime.fromisoformat(text)
-            except ValueError:
-                continue
+            parsed = _parse_datetime_value(value)
+            if parsed is not None:
+                return parsed
         return None
 
     @staticmethod
@@ -430,6 +552,45 @@ def _to_int(value: object) -> int | None:
         return None
 
 
+def _parse_datetime_value(value: object) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        numeric = float(text)
+    except ValueError:
+        numeric = None
+    if numeric is not None:
+        if numeric > 10_000_000_000:
+            numeric /= 1000.0
+        try:
+            return datetime.fromtimestamp(numeric, UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _timezone_name(value: datetime) -> str:
+    name = value.tzname()
+    if name:
+        return name
+    offset = value.utcoffset()
+    if offset is None:
+        return "unknown"
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    hours, minutes = divmod(abs(total_minutes), 60)
+    return f"UTC{sign}{hours:02d}:{minutes:02d}"
+
+
 def _synthetic_attachment_source(node: Tag, message_id: str, filename: str, index: int) -> str:
     """Build a stable locator only when ChatGPT exposes no direct file URL."""
     file_id = str(node.get("data-file-id") or "").strip()
@@ -441,6 +602,18 @@ def _synthetic_attachment_source(node: Tag, message_id: str, filename: str, inde
     if not file_id and not filename:
         return ""
     return "contextvault-chatgpt-attachment:?" + "&".join(query_parts)
+
+
+def _is_decorative_favicon_source(source_url: str) -> bool:
+    """Return whether a message image URL is a citation/UI favicon, not content."""
+    parsed = urlparse(source_url)
+    path_name = Path(unquote(parsed.path).rstrip("/")).name.casefold()
+    if path_name == "favicons":
+        return True
+    if path_name not in _FAVICON_PATH_NAMES:
+        return False
+    query_keys = {key.casefold() for key in parse_qs(parsed.query)}
+    return bool(query_keys & _FAVICON_QUERY_KEYS)
 
 
 def _attachment_filename(node: Tag, source: str, label: str) -> str:

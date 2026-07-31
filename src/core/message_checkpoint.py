@@ -10,7 +10,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.config.constants import APPLICATION_VERSION, ARCHIVE_FORMAT, ARCHIVE_SCHEMA_VERSION, CODE_EXTENSION_BY_LANGUAGE
+from src.config.constants import (
+    APPLICATION_VERSION,
+    ARCHIVE_FORMAT,
+    ARCHIVE_SCHEMA_VERSION,
+    CODE_EXTENSION_BY_LANGUAGE,
+)
 from src.models.conversation import ConversationMessage
 from src.parsers.conversation_parser import ConversationParser
 from src.utils.json_io import read_json, write_json
@@ -47,7 +52,7 @@ class MessageCheckpointStore:
         self._signatures_by_key: dict[str, str] = {}
         self._attempts_by_key: dict[str, int] = {}
         self._errors_by_key: dict[str, str] = {}
-        self._warnings: list[str] = []
+        self._warnings_by_key: dict[str, str] = {}
         self._messages_root = self.root / "messages"
         self._code_root = self.root / "code"
         self._messages_root.mkdir(parents=True, exist_ok=False)
@@ -55,7 +60,7 @@ class MessageCheckpointStore:
 
     @property
     def warnings(self) -> list[str]:
-        return list(self._warnings)
+        return list(self._warnings_by_key.values())
 
     @property
     def verified_count(self) -> int:
@@ -74,11 +79,18 @@ class MessageCheckpointStore:
         """Parse, save, and immediately verify one stable virtualized DOM window."""
         result = MessageCheckpointResult()
         sequence_by_key = {key: index + 1 for index, key in enumerate(order)}
-        for item in items:
+        for index, item in enumerate(items, start=1):
             key = str(item.get("key") or "").strip()
             signature = str(item.get("signature") or "").strip()
             html = str(item.get("html") or "")
-            if not key or not signature or not html:
+            if not key:
+                result.failed[f"window-item-{index}"] = "Observed message has no stable checkpoint key."
+                continue
+            if not signature:
+                result.failed[key] = "Observed message has no content signature."
+                continue
+            if not html:
+                result.failed[key] = "Observed message has no serializable HTML."
                 continue
             if self._signatures_by_key.get(key) == signature and key in self._messages_by_key:
                 existing = self._messages_by_key[key]
@@ -98,7 +110,7 @@ class MessageCheckpointStore:
                 warning = (
                     f"Message {key} was preserved as a degraded placeholder after {attempt} capture attempt(s): {reason}"
                 )
-                self._warnings.append(warning)
+                self._warnings_by_key[key] = warning
                 LOGGER.error(warning)
                 result.skipped_keys.append(key)
             else:
@@ -128,6 +140,7 @@ class MessageCheckpointStore:
                     continue
                 else:
                     self._errors_by_key.pop(key, None)
+                    self._warnings_by_key.pop(key, None)
                     result.verified_keys.append(key)
 
             self._messages_by_key[key] = message

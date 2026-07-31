@@ -7,17 +7,19 @@ import logging
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import uuid4
 
 from src.browser.session_worker import BrowserSessionWorker
 from src.core.archive_builder import ArchiveBuilder
+from src.core.message_checkpoint import MessageCheckpointStore
 from src.core.task_manager import TaskContext
 from src.models.conversation import ConversationListItem, ConversationRecord
-from src.models.settings import ApplicationSettings, PerformanceSettings
+from src.models.settings import ApplicationSettings
 from src.models.tasks import EventType
 from src.parsers.conversation_parser import ConversationParser
+from src.utils.paths import data_directory
 
 LOGGER = logging.getLogger(__name__)
 
@@ -76,105 +78,158 @@ class ExportPipeline:
         context.check_cancelled()
         self._transition(context, _ExportState.WAIT_BROWSER_READY, 5.0, conversation_item.title)
 
-        last_readiness_state: _ExportState | None = None
-
-        def browser_progress(stage: str, percentage: float, item: str, completed: int, total: int) -> None:
-            nonlocal last_readiness_state
-            mapped_state = _state_for_browser_stage(stage)
-            if mapped_state is not None and mapped_state != last_readiness_state:
-                LOGGER.info("Export state transition: %s", mapped_state.value)
-                last_readiness_state = mapped_state
-            scaled = 5.0 + (percentage / 100.0) * 40.0
-            context.report_progress(stage, scaled, item, completed, total)
-
-        loaded = self._wait(
-            self._browser_worker.submit(
-                "load_complete_conversation",
-                performance=settings.performance,
-                cancellation_event=context.cancellation_event,
-                progress_callback=browser_progress,
-            ),
-            timeout=_browser_operation_timeout(settings.performance),
+        export_id = str(uuid4())
+        checkpoint_root = data_directory() / "checkpoints" / export_id
+        checkpoint_store = MessageCheckpointStore(
+            checkpoint_root,
+            conversation_id=conversation_item.conversation_id,
+            base_url=conversation_item.url,
         )
-        context.check_cancelled()
-        self._validate_loaded_payload(loaded, conversation_item)
-        resolved_title = _resolved_conversation_title(loaded.get("title"), conversation_item.title)
-        loaded["title"] = resolved_title
-        for state, percentage in (
-            (_ExportState.WAIT_DOM_READY, 42.0),
-            (_ExportState.WAIT_REACT_READY, 43.0),
-            (_ExportState.WAIT_CONVERSATION_READY, 44.0),
-            (_ExportState.WAIT_MESSAGE_STABILIZATION, 45.0),
-        ):
-            self._transition(context, state, percentage, loaded["title"])
+        try:
+            last_readiness_state: _ExportState | None = None
 
-        self._transition(context, _ExportState.DEEP_SCAN, 48.0, loaded["title"])
-        exported_at_utc = datetime.now(UTC)
-        exported_at_local = datetime.now().astimezone()
-        conversation = self._parser.parse(
-            html=loaded["html"],
-            url=loaded["url"],
-            title=resolved_title,
-            exported_at=exported_at_utc,
-            exported_at_local=exported_at_local,
-            export_id=str(uuid4()),
-            browser_name=str(loaded.get("browserName") or "unavailable"),
-            browser_version=str(loaded.get("browserVersion") or "unavailable"),
-            browser_profile=str(loaded.get("browserProfile") or "unavailable"),
-            chatgpt_workspace=_optional_text(loaded.get("chatgptWorkspace")),
-            chatgpt_model=_optional_text(loaded.get("chatgptModel")),
-            estimated_size=int(loaded.get("estimatedSize") or 0),
-            source_message_count=int(loaded.get("messageCount") or 0),
-            source_asset_counts=_integer_mapping(loaded.get("assetCounts")),
-            readiness=dict(loaded.get("readiness") or {}),
-        )
+            def browser_progress(
+                stage: str,
+                percentage: float,
+                item: str,
+                completed: int,
+                total: int,
+            ) -> None:
+                nonlocal last_readiness_state
+                mapped_state = _state_for_browser_stage(stage)
+                if mapped_state is not None and mapped_state != last_readiness_state:
+                    LOGGER.info("Export state transition: %s", mapped_state.value)
+                    last_readiness_state = mapped_state
+                scaled = 5.0 + (percentage / 100.0) * 40.0
+                context.report_progress(stage, scaled, item, completed, total)
 
-        self._transition(context, _ExportState.COLLECT_METADATA, 52.0, conversation.title)
-        self._transition(context, _ExportState.COLLECT_MESSAGES, 56.0, f"{len(conversation.messages)} messages")
-        self._validate_conversation(conversation)
-        self._transition(context, _ExportState.VALIDATE_EXPORT, 60.0, "Pre-export validation passed")
-
-        def resource_loader(source_url: str) -> dict[str, Any]:
+            loaded = self._wait(
+                self._browser_worker.submit(
+                    "load_complete_conversation",
+                    performance=settings.performance,
+                    cancellation_event=context.cancellation_event,
+                    progress_callback=browser_progress,
+                    message_checkpoint_callback=checkpoint_store.capture_window,
+                ),
+                timeout=None,
+            )
             context.check_cancelled()
-            return self._wait(
-                self._browser_worker.submit("download_resource", source_url=source_url),
-                timeout=360.0,
+            self._validate_loaded_payload(loaded, conversation_item)
+            resolved_title = _resolved_conversation_title(
+                conversation_item.title,
+                conversation_item.conversation_id,
+            )
+            loaded["title"] = resolved_title
+            for state, percentage in (
+                (_ExportState.WAIT_DOM_READY, 42.0),
+                (_ExportState.WAIT_REACT_READY, 43.0),
+                (_ExportState.WAIT_CONVERSATION_READY, 44.0),
+                (_ExportState.WAIT_MESSAGE_STABILIZATION, 45.0),
+            ):
+                self._transition(context, state, percentage, loaded["title"])
+
+            self._transition(context, _ExportState.DEEP_SCAN, 48.0, loaded["title"])
+            message_keys = tuple(
+                str(key).strip()
+                for key in loaded.get("messageKeys", [])
+                if str(key).strip()
+            )
+            if (
+                len(message_keys) != int(loaded.get("messageCount") or 0)
+                or len(set(message_keys)) != len(message_keys)
+            ):
+                raise RuntimeError("Conversation readiness message keys are incomplete or duplicated.")
+            messages = checkpoint_store.ordered_messages(message_keys)
+            exported_at_utc = datetime.now(UTC)
+            exported_at_local = datetime.now().astimezone()
+            conversation = self._parser.build_record(
+                messages=messages,
+                url=loaded["url"],
+                title=resolved_title,
+                exported_at=exported_at_utc,
+                exported_at_local=exported_at_local,
+                export_id=export_id,
+                browser_name=str(loaded.get("browserName") or "unavailable"),
+                browser_version=str(loaded.get("browserVersion") or "unavailable"),
+                browser_profile=str(loaded.get("browserProfile") or "unavailable"),
+                chatgpt_workspace=_optional_text(loaded.get("chatgptWorkspace")),
+                chatgpt_model=_optional_text(loaded.get("chatgptModel")),
+                estimated_size=int(loaded.get("estimatedSize") or 0),
+                source_message_count=int(loaded.get("messageCount") or 0),
+                source_asset_counts=_integer_mapping(loaded.get("assetCounts")),
+                readiness=dict(loaded.get("readiness") or {}),
+                capture_warnings=_merge_capture_warnings(
+                    checkpoint_store.warnings,
+                    loaded.get("captureWarnings"),
+                ),
             )
 
-        last_archive_state: _ExportState | None = None
+            self._transition(context, _ExportState.COLLECT_METADATA, 52.0, conversation.title)
+            self._transition(
+                context,
+                _ExportState.COLLECT_MESSAGES,
+                56.0,
+                f"{len(conversation.messages)} messages",
+            )
+            self._validate_conversation(conversation)
+            self._transition(context, _ExportState.VALIDATE_EXPORT, 60.0, "Pre-export validation passed")
 
-        def archive_progress(stage: str, percentage: float, item: str, completed: int, total: int) -> None:
-            nonlocal last_archive_state
-            mapped_state = _state_for_archive_stage(stage)
-            if mapped_state is not None and mapped_state != last_archive_state:
-                LOGGER.info("Export state transition: %s", mapped_state.value)
-                last_archive_state = mapped_state
-            scaled = 60.0 + (percentage / 100.0) * 38.0
-            context.report_progress(stage, scaled, item, completed, total)
+            def resource_loader(
+                source_url: str,
+                resource_kind: Literal["image", "attachment"],
+            ) -> dict[str, Any]:
+                context.check_cancelled()
+                return self._wait(
+                    self._browser_worker.submit(
+                        "download_resource",
+                        source_url=source_url,
+                        resource_kind=resource_kind,
+                    ),
+                    timeout=360.0,
+                )
 
-        self._transition(context, _ExportState.COLLECT_IMAGES, 61.0, conversation.title)
-        self._transition(context, _ExportState.COLLECT_ATTACHMENTS, 62.0, conversation.title)
-        self._transition(context, _ExportState.COLLECT_CODE_BLOCKS, 63.0, conversation.title)
-        self._transition(context, _ExportState.GENERATE_JSON, 64.0, conversation.title)
-        result = self._archive_builder.build(
-            conversation=conversation,
-            settings=settings,
-            destination_root=destination_root,
-            resource_loader=resource_loader,
-            cancellation_event=context.cancellation_event,
-            progress_reporter=archive_progress,
-        )
-        self._transition(context, _ExportState.VERIFY_ARCHIVE, 98.0, conversation.title)
-        validation = result.get("validation") or {}
-        if not bool(validation.get("isValid")):
-            raise RuntimeError("Archive verification did not return a valid result.")
-        self._transition(context, _ExportState.SAVE_ARCHIVE, 99.0, result["archivePath"])
-        self._transition(context, _ExportState.EXPORT_COMPLETE, 100.0, conversation.title)
-        context.emit(
-            EventType.NOTIFICATION,
-            {"level": "success", "message": f"Export completed: {conversation.title}"},
-        )
-        return result
+            last_archive_state: _ExportState | None = None
+
+            def archive_progress(
+                stage: str,
+                percentage: float,
+                item: str,
+                completed: int,
+                total: int,
+            ) -> None:
+                nonlocal last_archive_state
+                mapped_state = _state_for_archive_stage(stage)
+                if mapped_state is not None and mapped_state != last_archive_state:
+                    LOGGER.info("Export state transition: %s", mapped_state.value)
+                    last_archive_state = mapped_state
+                scaled = 60.0 + (percentage / 100.0) * 38.0
+                context.report_progress(stage, scaled, item, completed, total)
+
+            self._transition(context, _ExportState.COLLECT_IMAGES, 61.0, conversation.title)
+            self._transition(context, _ExportState.COLLECT_ATTACHMENTS, 62.0, conversation.title)
+            self._transition(context, _ExportState.COLLECT_CODE_BLOCKS, 63.0, conversation.title)
+            self._transition(context, _ExportState.GENERATE_JSON, 64.0, conversation.title)
+            result = self._archive_builder.build(
+                conversation=conversation,
+                settings=settings,
+                destination_root=destination_root,
+                resource_loader=resource_loader,
+                cancellation_event=context.cancellation_event,
+                progress_reporter=archive_progress,
+            )
+            self._transition(context, _ExportState.VERIFY_ARCHIVE, 98.0, conversation.title)
+            validation = result.get("validation") or {}
+            if not bool(validation.get("isValid")):
+                raise RuntimeError("Archive verification did not return a valid result.")
+            self._transition(context, _ExportState.SAVE_ARCHIVE, 99.0, result["archivePath"])
+            self._transition(context, _ExportState.EXPORT_COMPLETE, 100.0, conversation.title)
+            context.emit(
+                EventType.NOTIFICATION,
+                {"level": "success", "message": f"Export completed: {conversation.title}"},
+            )
+            return result
+        finally:
+            checkpoint_store.close()
 
     @staticmethod
     def _validate_loaded_payload(loaded: dict[str, Any], item: ConversationListItem) -> None:
@@ -209,6 +264,7 @@ class ExportPipeline:
             "streamingComplete",
             "lazyLoadingComplete",
             "imagesReady",
+            "incrementalVerification",
         )
         failed_flags = [name for name in required_flags if readiness.get(name) is not True]
         if failed_flags:
@@ -217,6 +273,8 @@ class ExportPipeline:
             )
         if int(readiness.get("messageCount") or 0) != message_count:
             raise RuntimeError("Conversation readiness message count is internally inconsistent.")
+        if int(readiness.get("checkpointedMessages") or 0) != message_count:
+            raise RuntimeError("Conversation checkpoint count does not match the stabilized message count.")
 
     @staticmethod
     def _validate_conversation(conversation: ConversationRecord) -> None:
@@ -293,7 +351,10 @@ class ExportPipeline:
         context.report_progress(_state_label(state), percentage, item, force=True)
 
     @staticmethod
-    def _wait(future: concurrent.futures.Future[Any], timeout: float = 900.0) -> Any:
+    def _wait(
+        future: concurrent.futures.Future[Any],
+        timeout: float | None = 900.0,
+    ) -> Any:
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError as exc:
@@ -301,21 +362,38 @@ class ExportPipeline:
             raise TimeoutError("Browser operation exceeded the allowed time.") from exc
 
 
-def _browser_operation_timeout(performance: PerformanceSettings) -> float:
-    return {"Low": 240.0, "Balanced": 1020.0, "High": 1920.0}[performance.memory_mode]
 
+def _merge_capture_warnings(existing: list[str], observed: Any) -> list[str]:
+    """Merge checkpoint and browser-observation warnings without duplication."""
+    values: list[str] = list(existing)
+    if isinstance(observed, (list, tuple)):
+        values.extend(str(item or "").strip() for item in observed)
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        warning = str(value or "").strip()
+        if warning and warning not in seen:
+            seen.add(warning)
+            output.append(warning)
+    return output
 
 def _optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
 
 
-def _resolved_conversation_title(observed: Any, fallback: str) -> str:
-    title = str(observed or "").strip()
-    if title.casefold() in {"chatgpt", "new chat", "untitled conversation"}:
-        title = ""
-    fallback_title = fallback.strip()
-    return title or fallback_title or "Untitled Conversation"
+def _resolved_conversation_title(listed_title: Any, conversation_id: str) -> str:
+    """Use the scanned ChatGPT conversation title, never message-content headings."""
+    title = " ".join(str(listed_title or "").split()).strip()
+    if title and title.casefold() not in {
+        "chatgpt",
+        "new chat",
+        "untitled conversation",
+    }:
+        return title
+    compact_id = "".join(character for character in conversation_id if character.isalnum())
+    suffix = compact_id[:8] or "unknown"
+    return f"Conversation #{suffix}"
 
 
 def _integer_mapping(value: Any) -> dict[str, int]:
