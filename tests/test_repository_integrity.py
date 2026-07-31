@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import ast
 import json
+import shutil
+import subprocess
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+
+from scripts.release.verify_release_metadata import verify_release_metadata
+from scripts.release.verify_public_tree import verify_public_tree
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +63,25 @@ class RepositoryIntegrityTests(unittest.TestCase):
             name, version = dependency.split("==", 1)
             metadata[name.lower()] = version
         self.assertEqual(metadata, locked)
+        self.assertEqual(verify_release_metadata(), [])
+
+        expected_header = "ContextVault v0.2.0"
+        for relative in ("requirements.txt", "requirements.lock", "requirements-build.lock"):
+            with self.subTest(relative=relative):
+                self.assertIn(expected_header, (ROOT / relative).read_text(encoding="utf-8"))
+
+        verifier = (ROOT / "scripts/release/verify_release_candidate.py").read_text(encoding="utf-8")
+        self.assertIn('DEFAULT_VENV = ROOT / ".venv-release"', verifier)
+        self.assertIn('"requirements.lock"', verifier)
+        self.assertIn('"requirements-build.lock"', verifier)
+        self.assertIn('"scripts/test/check_environment.py"', verifier)
+        self.assertIn('"scripts/test/run_tests.py"', verifier)
+        self.assertIn('"diff", "--cached", "--check"', verifier)
+        self.assertIn('"scripts/release/verify_public_tree.py"', verifier)
+
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn("/project/", gitignore)
+        self.assertIn(".venv-release/", gitignore)
 
     def test_nuitka_includes_customtkinter_package_data(self) -> None:
         with (ROOT / "nuitka.toml").open("rb") as stream:
@@ -65,12 +90,51 @@ class RepositoryIntegrityTests(unittest.TestCase):
 
     def test_required_repository_paths_are_present(self) -> None:
         required = (
-            "README.md", "LICENSE", ".gitignore", "requirements.txt", "requirements.lock",
-            "CHANGELOG.md", "docs/index.md", ".github/workflows/ci.yml",
-            ".github/workflows/release.yml", "config/defaults.json", "tests",
+            "README.md", "README.txt", "LICENSE", ".gitignore", "requirements.txt", "requirements.lock",
+            "CHANGELOG.md", "SECURITY.md", "SUPPORT.md", "CODE_OF_CONDUCT.md", "docs/index.md",
+            "docs/release-notes/0.2.0.md", "docs/security/privacy-and-local-data.md",
+            ".github/workflows/ci.yml", ".github/workflows/release.yml",
+            "scripts/release/verify_release_metadata.py",
+            "scripts/release/verify_release_candidate.py",
+            "scripts/release/verify_public_tree.py",
+            "requirements-build.lock", "config/defaults.json", "tests",
         )
         missing = [item for item in required if not (ROOT / item).exists()]
         self.assertEqual(missing, [])
+
+        git = shutil.which("git")
+        if git is None:
+            self.skipTest("Git is required for public-tree verifier regression coverage.")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run([git, "init", "--quiet", str(root)], check=True)
+            (root / ".gitignore").write_text(
+                "\n".join((
+                    "/project/",
+                    ".venv-release/",
+                    "data/chrome-user-data/",
+                    "data/settings.json",
+                    "data/export_history.json",
+                    "data/checkpoints/",
+                    "exports/",
+                    "logs/",
+                    "build/",
+                    "dist/",
+                    "artifacts/",
+                    "",
+                )),
+                encoding="utf-8",
+            )
+            (root / "README.md").write_text("# Test\n", encoding="utf-8")
+            subprocess.run([git, "-C", str(root), "add", ".gitignore", "README.md"], check=True)
+            self.assertEqual(verify_public_tree(root), [])
+
+            private = root / "project" / "private.md"
+            private.parent.mkdir(parents=True)
+            private.write_text("private\n", encoding="utf-8")
+            subprocess.run([git, "-C", str(root), "add", "--force", "project/private.md"], check=True)
+            violations = verify_public_tree(root)
+            self.assertTrue(any("project/private.md" in item for item in violations))
 
     def test_text_files_contain_no_unexpected_control_characters(self) -> None:
         allowed = {9, 10, 13}

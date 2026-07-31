@@ -1,85 +1,185 @@
-# Forensic Audit Report
+# Forensic Audit Report — v0.2.0 Export Reliability
 
-**Project:** ContextVault  
-**Version:** 1.0.0  
-**Audit date:** 2026-07-28  
-**Source:** uploaded `ContextVault.zip`; GitHub repository `vibtools/ContextVault` was empty at audit time.
+**Audit scope:** export failures reported during large, image-heavy, and repeated conversation exports
+**Application target:** 0.2.0
+**Archive schema:** 1.0
+**Public source commit reviewed before documentation preparation:** `dab5d0bc5f0c5e9ae1028722ed1a364be15615cb`
 
-## 1. Discovery baseline
+## Executive summary
 
-The uploaded archive contained 59 original files and 103 ZIP entries. All 59 original files remain present at their original paths. The initial repository supplied complete frozen engineering specifications but almost no application implementation: source packages and tests were empty, launch/build/test scripts were placeholders, two test scripts were syntactically invalid, user documentation and GitHub workflows were absent, and `nuitka.toml` was Markdown-wrapped rather than valid TOML.
+The reported failures were not one isolated timeout. They were a chain of independent defects exposed at different export stages.
 
-## 2. Architecture assessment
+The v0.2.0 source addresses:
 
-The implemented system preserves the frozen architecture exactly:
+- fixed total readiness timeout;
+- missing incremental checkpoint wiring;
+- stale zero-message completion;
+- permanently pending browser images;
+- broad loading-selector coupling;
+- decorative favicon extraction;
+- incorrect asset fallback routing;
+- duplicate export interleaving;
+- title source selection;
+- archive publication race;
+- Windows temporary path length;
+- misleading cancellation logging.
 
-```text
-CustomTkinter UI
-    -> ApplicationController
-    -> TaskManager / ThreadPoolExecutor / queue.Queue
-    -> BrowserSessionWorker / asyncio event loop
-    -> Playwright / official Google Chrome
-    -> BeautifulSoup + Markdownify parser / Pydantic models
-    -> ArchiveBuilder / RagBuilder / ArchiveValidator
-```
+## Incident 1: fixed 900-second readiness exhaustion
 
-No alternate UI framework, browser engine, database, cloud service, embeddings system, plugin framework, or unauthorized runtime dependency was introduced.
+### Symptom
 
-## 3. Initial critical findings and disposition
+A large conversation continued producing meaningful progress but failed when a 900-second total readiness budget expired.
 
-| Finding | Severity | Disposition |
-|---|---:|---|
-| Empty application packages and tests | Critical | Implemented complete frozen source architecture and regression suite. |
-| Placeholder/invalid launcher and test scripts | Critical | Replaced with executable environment, test, build, maintenance, and release scripts. |
-| Invalid `nuitka.toml` and missing build resources | Critical | Added valid TOML, icon/resources, locked build tooling, Windows workflow, and packager. |
-| Missing configuration, schemas, templates, workflows, and docs | High | Added validated defaults, generated schemas, resources, CI/release automation, and synchronized documentation. |
-| Shared atomic JSON temporary filename race | High | Replaced with unique same-directory temporary files, flush/fsync, and atomic `os.replace`; concurrency regression test added. |
-| Archive overwrite could risk previous output | High | Added staging publication, backup/rollback, atomic ZIP replacement, and regression tests. |
-| Message content deduplication could discard legitimate repeated messages | High | Deduplication now uses only stable source message IDs; repeated-content regression test added. |
-| Chrome profile name accepted platform-specific separators | High | Rejects absolute paths, traversal, NUL, `/`, and `\` on every platform; security test added. |
-| Launch Chrome used the regular Chrome `User Data` root | Critical | Blank/default regular roots now resolve to ContextVault-owned `data/chrome-user-data`; automatic CDP fallback was removed; six regression tests and a headed Chromium smoke test verify the corrected launch contract. |
-| Validator trusted stored counts/reference metadata | High | Recomputes message links/counts, code/table payloads, asset size/hash, mappings, RAG counts, and keyword consistency. |
-| Browser worker start/stop race and non-propagated cancellation | High | Added lock-protected lifecycle, active asyncio cancellation, queued-future draining, restart safety, and concurrency tests. |
-| Sidebar scan captured only current DOM | High | Added cancellation-aware scroll-to-stable scanning that accumulates virtualized/lazy-loaded links. |
-| Conversation loader could choose sidebar as largest scroller | High | Selects the closest scrollable ancestor of message nodes before fallback. |
-| Missing browser retry strategy | Medium | Added bounded exponential retries for transient scan/navigation/load/download/reload failures. |
-| `TaskManager.shutdown(timeout)` ignored timeout | Medium | Added bounded future wait, cancellation, and warning for unfinished tasks. |
-| Windows drop callback pointer types could truncate on x64 | Medium | Added pointer-width-safe ctypes prototypes and callback pointer conversion. |
-| PIL icon file handle remained open | Low | Image is copied inside a context manager before creating the CustomTkinter image. |
+### Root cause
 
-## 4. Verification performed
+Both browser loading and export orchestration applied absolute deadlines. Incremental checkpoint components existed but were not fully connected to the deep-scan workflow.
 
-- Full source AST and bytecode compilation.
-- 55 standard-library regression tests: isolated browser-profile resolution, explicit CDP behavior, parser, archive, validator, rollback, atomic writes, security, services, task manager, browser worker, configuration, dependency synchronization, and architecture boundaries.
-- JSON/TOML parsing and schema/resource presence checks.
-- Original-file preservation comparison.
-- Hygiene scans for merge markers, unfinished implementation markers, wildcard imports, bare exceptions, debug calls, and credential-like content.
-- Release packager exercised against a synthetic OneDir fixture; ZIP CRC, required members, and SHA-256 checksum passed.
-- Linux environment gate executed; Windows-only build command correctly refused the unsupported platform.
+### Correction
 
-## 5. Remaining release risks
+- replaced total elapsed deadline with meaningful-progress stall detection;
+- wired checkpoint callback and verification;
+- removed the second outer absolute timeout;
+- preserved checkpointed messages across recovery;
+- added large-conversation regression coverage.
 
-No known critical source defect remains. The following mandatory validation is external and therefore still open:
+## Incident 2: favicon routed as an attachment
 
-1. Install the exact locked runtime/build dependencies on Windows x64.
-2. Execute the official MSVC/Nuitka build and inspect compiler warnings.
-3. Confirm the complete compiled dependency/DLL layout.
-4. Launch the EXE and all UI pages on clean Windows 10 and Windows 11 machines.
-5. Run exports using a real authenticated Chrome Stable profile, including extensions and CDP.
-6. Measure startup, browser startup, memory, CPU, and large-conversation export behavior.
-7. Run GitHub Actions and inspect/upload the actual release artifact.
-8. Resolve or formally amend the frozen requirement that no runtime binary may exist beside the EXE: standard Nuitka OneDir commonly requires compiled dependencies at the distribution root, so this exact layout cannot be certified from source configuration alone.
+### Symptom
 
-## 6. Audit conclusion
+During image collection, an HTTP 404 for a decorative favicon caused ContextVault to search the page for an attachment control for up to 180 seconds.
 
-The repository is a complete, internally validated **source release candidate**. It is **not certified as a stable portable Windows release** until the FAIL gates in `release-validation.md` pass.
+### Root cause
 
-## 7. Incremental message-integrity re-audit — 2026-07-30
+- every message image element was treated as exportable;
+- resource kind was not propagated through all loader boundaries;
+- image HTTP errors used attachment fallback;
+- attachment fallback reset and scanned the page.
 
-A production export of 272 messages completed browser deep scanning but failed final validation with repeated `Code reference ... file content does not match rawCode` errors. The re-audit traced the error to newline handling rather than failed collection: code bytes were written losslessly, while the validator used `Path.read_text()`, whose universal-newline behavior converted CRLF to LF on read. Exact-byte comparison now preserves both CRLF and LF code blocks.
+### Correction
 
-The same re-audit identified a reliability limitation in end-of-conversation-only validation. The browser worker now commits each settled virtualized message window through `MessageCheckpointStore` before scrolling. Message JSON is atomically round-tripped, code files are byte-verified, failed keys are retried, at most one page reload per failed key resumes from retained checkpoints, and an exhausted content fragment becomes an explicit degraded placeholder rather than aborting the complete conversation. Fatal infrastructure/storage/browser failures are not masked.
+- filter known decorative favicon and interface sources;
+- propagate explicit resource kind;
+- permit attachment UI fallback only for attachments;
+- preserve compatibility where required;
+- add routing regression tests.
 
-Timestamp fields are additive and provenance-aware: reliable source message timestamps drive conversation start/end; unavailable source timestamps remain null/unknown; capture and export timestamps are labeled separately. The frozen final archive folder layout and public controller/browser commands remain unchanged.
+## Incident 3: duplicate exports and archive collision
 
-Verification evidence now includes 53 passing tests, including a 272-message archive with 90 CRLF code blocks, degraded-message publication with warnings, exact-byte code validation, settings persistence, page reload/resume, and exhausted-message continuation.
+### Symptom
+
+Two exports of the same conversation started almost simultaneously. One captured fewer messages and published first. The fuller export later failed because the target already existed.
+
+### Root cause
+
+- low-level browser commands were serialized, but the composite export workflow was not;
+- title came from message-page headings instead of canonical sidebar metadata;
+- target existence was checked before a long build;
+- final publication had a time-of-check/time-of-use race.
+
+### Correction
+
+- add exclusive browser workflow lease;
+- reject duplicate submissions before browser interleaving;
+- use scanned sidebar title;
+- use stable conversation-ID suffix;
+- resolve final target atomically at publication;
+- release the lease through task completion callbacks.
+
+## Incident 4: stalled image prevented any scroll
+
+### Symptom
+
+The application reached message stabilization but did not scroll. Restarting reproduced the same state.
+
+### Root cause
+
+- a terminal broken image was treated as pending forever;
+- readiness directly required pending image count zero;
+- pending counts were retained across virtualized windows;
+- broad loading selectors counted image spinners as blocking loaders;
+- spinner mutations reset stabilization;
+- progress labels did not identify the image wait clearly.
+
+### Correction
+
+- only incomplete images remain browser-pending;
+- separate image and blocking loaders;
+- track image wait by message key and count;
+- apply bounded grace by delay mode;
+- accept stalled image state with warning;
+- preserve semantic stabilization;
+- propagate warning into archive metadata and logs.
+
+## Incident 5: Windows path and temporary files
+
+### Symptom
+
+Asset writes failed with `FileNotFoundError` when temporary filenames extended already long Windows paths.
+
+### Root cause
+
+Temporary filenames repeated the complete target filename plus a UUID suffix.
+
+### Correction
+
+Use short same-directory temporary names such as `.cv-*.tmp`.
+
+## Incident 6: cancellation reported as failure
+
+### Symptom
+
+User cancellation produced an ERROR traceback that looked like a browser defect.
+
+### Root cause
+
+The worker logged expected interruption through the generic exception path.
+
+### Correction
+
+Expected interruption is logged at information level as browser command cancellation. Unexpected exceptions remain errors.
+
+## Validation evidence
+
+GitHub Actions Windows Python 3.12 source CI completed successfully for the reviewed commit.
+
+The source suite passed 81 tests, including:
+
+- archive build and validation;
+- concurrent publication;
+- overwrite rollback;
+- short temporary paths;
+- managed profile resolution;
+- title normalization;
+- browser-worker cancellation and restart;
+- export exclusivity;
+- 445-message progress beyond timeout;
+- checkpoint reload and resume;
+- degraded-message behavior;
+- exact CRLF code bytes;
+- image-spinner and stalled-image readiness;
+- zero-message recovery;
+- parser compatibility;
+- repository integrity;
+- security path handling;
+- atomic JSON replacement;
+- task callbacks and cancellation.
+
+## Evidence limitations
+
+The source CI does not compile the final Nuitka release.
+
+The tag-triggered Build and Release workflow remains authoritative for MSVC/Nuitka success, OneDir completeness, packaged ZIP integrity, checksum generation, and GitHub Release assets.
+
+A real authenticated Windows and Chrome smoke export should be performed before treating the release as operationally complete.
+
+## Final audit status
+
+| Area | Result |
+|---|---|
+| Root causes identified | PASS |
+| Source corrections present | PASS |
+| Automated Windows source CI | PASS |
+| 81-test forensic suite | PASS |
+| Public documentation corrected | Prepared for commit |
+| Tag-triggered Nuitka build | Pending release tag |
+| Clean portable smoke test | Required before final sign-off |

@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
+from src.config.constants import APPLICATION_VERSION
 from src.models.settings import ApplicationSettings
 from src.services.config_service import ConfigService
 from src.services.history_service import HistoryService
@@ -129,6 +130,7 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual([item["title"] for item in records], ["Second", "First"])
             payload = read_json(path)
             self.assertEqual(payload["schemaVersion"], "1.0")
+            self.assertEqual(payload["version"], APPLICATION_VERSION)
 
     def test_json_writer_is_utf8_root_object(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

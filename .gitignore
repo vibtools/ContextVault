@@ -10,6 +10,7 @@ htmlcov/
 
 # Virtual environments
 .venv/
+.venv-release/
 venv/
 env/
 
@@ -45,4 +46,5 @@ logs/
 Thumbs.db
 desktop.ini
 
+# Private maintainer specifications (local only)
 /project/

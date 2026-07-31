@@ -44,6 +44,12 @@ def main() -> int:
     if failures:
         for failure in failures:
             print(f"FAIL {failure}", file=sys.stderr)
+        print(f"Active interpreter: {sys.executable}", file=sys.stderr)
+        print(
+            "The project lock is correct; the active Python environment is out of sync. "
+            "Run: python scripts/release/verify_release_candidate.py --ref main --skip-chrome",
+            file=sys.stderr,
+        )
         return 1
     print("All locked runtime modules are available.")
     return 0

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.config.constants import EXPORT_HISTORY_FILENAME
+from src.config.constants import APPLICATION_VERSION, EXPORT_HISTORY_FILENAME
 from src.utils.json_io import read_json, write_json
 from src.utils.paths import data_directory
 
@@ -56,7 +56,7 @@ class HistoryService:
                 "format": "contextvault",
                 "generatedBy": "ContextVault",
                 "generatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-                "version": "1.0.0",
+                "version": APPLICATION_VERSION,
                 "data": {"records": records},
             }
             write_json(self.path, payload)

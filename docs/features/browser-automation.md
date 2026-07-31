@@ -1,39 +1,196 @@
 # Browser Automation
 
-All Chrome and Playwright objects live on one dedicated browser worker and asyncio event loop. UI and general worker threads communicate through commands, plain-data callbacks, and futures; they never touch Playwright objects directly.
+ContextVault uses Playwright with official Google Chrome Stable.
 
-ContextVault supports:
+The browser architecture is intentionally serialized: one dedicated browser worker owns all Chrome and Playwright objects.
 
-- launching official Google Chrome Stable with a ContextVault-owned persistent user-data directory;
-- honoring an explicitly configured **non-standard** Chrome user-data root and profile;
-- connecting to a user-started Chrome CDP endpoint;
-- scanning conversation links;
-- opening a conversation;
-- MutationObserver-backed readiness detection and progressive virtualized-history scanning;
-- per-window message checkpointing before scroll continuation;
-- message-specific retry, at most one recovery reload per failed key, and checkpoint resume;
-- authenticated retrieval of HTTP, data, and blob resources;
-- graceful browser status, refresh, and close operations.
+## Supported workflows
 
-## Launch semantics
+ContextVault can:
 
-**Launch Chrome** never automates Chrome's regular daily-browsing `User Data` directory. When the setting is blank—or when that regular directory is selected—ContextVault uses `data/chrome-user-data` and creates the selected profile there. This produces a separate Chrome process/window, avoids Chrome's process-singleton collision, and preserves manual ChatGPT login across application restarts.
+- launch a managed persistent Chrome profile;
+- launch an explicitly configured non-standard profile root;
+- connect to an intentionally remote-debugging-enabled Chrome instance;
+- scan ChatGPT sidebar conversations;
+- open a selected conversation;
+- observe loading, streaming, messages, and virtualized history;
+- checkpoint messages before scrolling;
+- retrieve authenticated resources;
+- refresh or close the managed browser;
+- report status and cancellation.
 
-**Connect** remains an explicit CDP workflow. It does not serve as an automatic fallback for a failed profile launch because a normal Chrome process is not necessarily exposing a debugging endpoint.
+## Dedicated browser ownership
 
-## Deep-scan and checkpoint flow
+Playwright objects are not thread-safe across arbitrary application threads.
 
-For every stable virtualized DOM window, ContextVault executes:
+Architecture:
 
-1. observe message/streaming/loading/image state;
-2. extract each visible message fragment;
-3. atomically save and round-trip-validate its checkpoint JSON;
-4. save every code block as exact UTF-8 bytes and read it back;
-5. commit message signatures;
-6. scroll upward only after the window is committed.
+```text
+UI
+→ ApplicationController
+→ TaskManager
+→ BrowserSessionWorker
+→ one asyncio loop
+→ Playwright
+→ Google Chrome
+```
 
-Already committed messages remain in the process-local accumulator and checkpoint store even if ChatGPT virtualizes them out of the live DOM. If one message fails, the current window remains in place while that message is retried. At the recovery threshold the page reloads at most once for that failed key/group; previously completed checkpoints remain intact, the scan resumes, and only uncommitted message keys are retried. After the configured retries are exhausted, visible content for that message is preserved as a degraded placeholder and scanning continues.
+The UI and general workers exchange commands, futures, and plain data. They do not directly manipulate browser objects.
 
-The scan cannot complete until every accumulated message key is either verified or explicitly degraded. A browser/session loss, storage failure, or inability to preserve even a degraded placeholder remains an explicit failure.
+## Exclusive workflows
 
-Selectors are centralized and include fallback strategies because ChatGPT's DOM may change. A selector failure is reported without silently inventing content.
+A complete browser workflow receives an exclusive lease.
+
+This prevents operations such as two exports, export and scan, export and refresh, export and close, or launch and connect from interleaving one shared browser context.
+
+A duplicate export request is rejected before it can change the active conversation or archive state.
+
+The lease is released after success, failure, or safe cancellation cleanup.
+
+## Managed profile
+
+With Browser Profile Root blank, ContextVault uses:
+
+```text
+data\chrome-user-data
+```
+
+Benefits include a separate Chrome process, reusable ChatGPT login, isolation from normal daily browsing, and predictable automation ownership.
+
+ContextVault does not automate the regular Chrome `User Data` root.
+
+## Explicit custom profile
+
+An advanced user can configure a non-standard user-data root and a profile directory name.
+
+The profile directory field accepts a name, not a path.
+
+## Connect over CDP
+
+**Connect** is advanced.
+
+It requires Chrome to be started intentionally with remote debugging and an appropriate non-standard profile.
+
+ContextVault does not automatically attach to any Chrome process after a managed launch failure.
+
+## Conversation title
+
+The canonical archive title comes from the scanned ChatGPT sidebar entry.
+
+Preference order includes stable full-title attributes before truncated visible text.
+
+Accessibility labels can contain project or UI context; that context is removed rather than used as the archive title.
+
+The first assistant heading is not used as the conversation title.
+
+## Readiness observation
+
+The browser installs an observer that tracks meaningful state, including:
+
+- message containers;
+- streaming state;
+- blocking loaders;
+- image loaders;
+- continue-generation controls;
+- scroll position;
+- message content and asset counts;
+- DOM semantic stability.
+
+Readiness does not complete with zero messages.
+
+## Empty conversation recovery
+
+A page can display a stable shell before React renders messages.
+
+ContextVault waits for meaningful state. If the DOM remains idle with zero messages for the bounded recovery period, it reloads once.
+
+If messages still do not appear, it raises a readiness error rather than exporting an empty archive.
+
+## Progress-based stall policy
+
+A long conversation can legitimately exceed a fixed wall-clock duration.
+
+ContextVault measures meaningful progress, such as new message keys, changed committed count, scroll movement, checkpoint activity, transition toward the top, and resolved recovery state.
+
+The operation can continue beyond the nominal stall duration while progress occurs.
+
+A no-progress stall still fails explicitly.
+
+## Virtualized history
+
+ChatGPT may remove offscreen messages from the live DOM.
+
+ContextVault accumulates verified message records independently of the current viewport. Scrolling continues upward until the complete reachable history is captured.
+
+## Semantic stabilization
+
+Transient spinners can cause frequent DOM mutations without changing message content.
+
+ContextVault compares semantic message state such as source key, role, text, timestamp, and asset counts.
+
+Spinner-only churn does not block a stable message forever.
+
+Meaningful content or asset-count changes still reset stabilization.
+
+## Image readiness
+
+An image is browser-pending while it has not completed loading.
+
+A terminal broken image is not treated as loading forever.
+
+Image-specific indicators are separated from blocking ChatGPT loaders.
+
+Grace periods:
+
+```text
+Fast    8 seconds
+Normal 20 seconds
+Safe   45 seconds
+Auto   20 seconds
+```
+
+After the grace period, ContextVault can checkpoint the stable message markup and continue with a warning.
+
+A newly observed image count receives its own bounded wait.
+
+## Asset routing
+
+Resources carry an explicit kind, such as image or attachment.
+
+- image failures do not invoke attachment controls;
+- attachment controls are used only for attachments;
+- decorative favicon sources are filtered;
+- HTTP, data, and blob resources use appropriate authenticated retrieval paths.
+
+## Checkpoint and retry flow
+
+For a stable window:
+
+1. extract each message fragment;
+2. write atomic checkpoint JSON;
+3. write exact code bytes;
+4. read back and validate;
+5. commit source signatures;
+6. scroll upward.
+
+If a message fails:
+
+1. retry that message;
+2. retain the current window where practical;
+3. reload once at the recovery threshold;
+4. resume with completed checkpoints;
+5. preserve an exhausted message as degraded when safe.
+
+## Cancellation
+
+Cancellation is cooperative.
+
+Expected interruption is logged as cancellation at information level. It is not reported as a browser crash.
+
+The browser worker cancels active and queued commands during shutdown and can restart safely where supported.
+
+## Selector maintenance
+
+ChatGPT can change without notice.
+
+Selectors are centralized and use fallbacks. Unsupported DOM states must produce diagnostics and tests; they must not silently invent missing content.

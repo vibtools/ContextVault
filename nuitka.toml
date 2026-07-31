@@ -1,6 +1,6 @@
 [project]
 name = "ContextVault"
-version = "1.0.0"
+version = "0.2.0"
 main_file = "src/app.py"
 
 [nuitka]
@@ -15,8 +15,8 @@ remove_output = true
 report = "build-report.xml"
 company_name = "Vib Tools"
 product_name = "ContextVault"
-file_version = "1.0.0"
-product_version = "1.0.0"
+file_version = "0.2.0"
+product_version = "0.2.0"
 copyright = "Copyright © Vib Tools"
 windows_icon_from_ico = "assets/icons/app.ico"
 enable_plugin = ["tk-inter"]

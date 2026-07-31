@@ -1,58 +1,101 @@
 # Changelog
 
-All notable changes to ContextVault are documented here. The project follows Semantic Versioning and the Keep a Changelog structure.
+All notable public changes to ContextVault are documented in this file.
+
+ContextVault follows Semantic Versioning for the application. The archive schema has its own version and remains `1.0` in application version `0.2.0`.
 
 ## [Unreleased]
 
-### Fixed
+No unreleased public changes are documented yet.
 
-- Corrected archive code validation to compare exact UTF-8 bytes instead of newline-translated text, eliminating false `file content does not match rawCode` failures for CRLF code blocks on Windows.
-- Replaced end-of-conversation-only message validation with incremental per-message checkpointing before each upward scroll. Each stabilized message is parsed, written as atomic JSON, its code bytes are saved and read back, and the window is committed before scrolling continues.
-- Added bounded message-specific retry, one recovery page reload with checkpoint resume, and explicit degraded-message preservation after configured retries are exhausted so one malformed message does not invalidate an otherwise usable conversation.
-- Added source timestamp provenance, per-message capture timestamps/status/attempts, and conversation start/end/export/timezone metadata without changing the frozen archive folder layout.
-- Prevented the conversation loader from treating a stable zero-message DOM as complete; exports now wait through delayed React/project-chat rendering, observe semantic loading states, accumulate virtualized messages, and fail only after the bounded readiness policy is exhausted.
-- Added current `data-message-id` message-container compatibility and parser coverage without changing the archive format.
-- Serialized same-target JSON commits and added bounded Windows sharing-denial retries so concurrent atomic writes no longer fail with transient `PermissionError: Access is denied`.
-- Corrected Launch Chrome so a blank or regular Chrome profile root resolves to ContextVault's persistent non-standard `data/chrome-user-data` directory instead of forwarding `about:blank` into an already-running daily Chrome process.
-- Removed the invalid automatic CDP fallback from Launch Chrome; Connect remains an explicit operation for intentionally remote-debugging-enabled Chrome instances.
-- Stopped Playwright from passing its two extension-disabling default arguments to the dedicated persistent profile.
+## [0.2.0] - 2026-07-31
 
-### Validation
+### Summary
 
-- 55 source and regression tests pass, including exact CRLF code preservation, per-message checkpoint persistence, retry/reload/resume, exhausted-message degradation, timestamp metadata, isolated browser-profile resolution, browser-worker lifecycle, deep archive consistency, atomic replacement, and rollback.
-- All 124 frozen release-checklist items are explicitly classified PASS or FAIL.
-- Official Windows GitHub Actions execution, Nuitka binary generation, and clean Windows 10/11 Chrome-profile smoke testing remain mandatory before a stable public release.
-
-## [1.0.0] - 2026-07-28
+ContextVault 0.2.0 is an export reliability and stability release focused on large conversations, browser-rendered images, Windows filesystem behavior, export concurrency, archive naming, and diagnostics.
 
 ### Added
 
-- Complete frozen CustomTkinter one-window desktop UI with Dashboard, Conversations, Archives, Export History, Settings, Logs, and About pages.
-- Managed task queue, cooperative cancellation, current-session resume, progress events, notifications, and queue-backed logging.
-- Dedicated Playwright browser worker with persistent Google Chrome profile launch, CDP connection, conversation scanning, progressive lazy-load stabilization, and authenticated resource retrieval.
-- Lossless BeautifulSoup/Markdownify parser for ordered messages, roles, timestamps, plain text, Markdown, HTML, code, images, attachments, tables, and citations.
-- Pydantic domain models and deterministic camelCase JSON envelopes.
-- Atomic archive generation with every frozen mandatory document, asset folder, RAG file, export log, validation log, manifest mapping, SHA-256 hashes, and optional ZIP compression.
-- Archive validation, archive management, summary rebuild with manifest-integrity refresh, export history, and validated settings recovery.
-- Runtime defaults, generated JSON Schemas, dark theme resource, template resources, Windows application icon, and portable README.
-- Standard-library forensic test suite and source/environment verification scripts.
-- Valid Nuitka configuration, Windows OneDir build script, release ZIP/checksum packager, CI workflow, and tag-triggered GitHub Release workflow.
-- Complete installation, usage, configuration, architecture, internal API, troubleshooting, FAQ, release, and requirements-traceability documentation.
+- Incremental per-message checkpointing before upward scrolling.
+- Atomic checkpoint JSON persistence and immediate round-trip verification.
+- Exact UTF-8 code-byte checkpointing and validation.
+- Message-specific retry with configurable `Message Retry Count`.
+- One bounded recovery reload while preserving completed checkpoints.
+- Explicit degraded-message preservation after configured retries are exhausted.
+- Capture status, attempt count, error, source identity, capture time, and timestamp provenance metadata.
+- Canonical sidebar-title preservation for archive naming.
+- Stable conversation-identity suffixes for duplicate archive titles.
+- Exclusive browser workflow gating for export, scan, open, refresh, launch, connect, and close operations.
+- Publish-time atomic archive collision resolution.
+- Bounded recovery for a stable zero-message conversation shell.
+- Bounded browser image-render grace by delay mode.
+- Stalled-image warnings propagated to export metadata and logs.
+- Regression tests for large-conversation progress, image spinners, export exclusivity, title handling, cancellation, and Windows temporary path behavior.
+- Public upgrade, privacy, release verification, limitations, support, security, and release-process documentation.
+- An isolated `.venv-release` verifier that installs exact locked dependencies without modifying the global Python environment.
 
 ### Fixed
 
-- Corrected archive code validation to compare exact UTF-8 bytes instead of newline-translated text, eliminating false `file content does not match rawCode` failures for CRLF code blocks on Windows.
-- Replaced end-of-conversation-only message validation with incremental per-message checkpointing before each upward scroll. Each stabilized message is parsed, written as atomic JSON, its code bytes are saved and read back, and the window is committed before scrolling continues.
-- Added bounded message-specific retry, one recovery page reload with checkpoint resume, and explicit degraded-message preservation after configured retries are exhausted so one malformed message does not invalidate an otherwise usable conversation.
-- Added source timestamp provenance, per-message capture timestamps/status/attempts, and conversation start/end/export/timezone metadata without changing the frozen archive folder layout.
-- Hardened lazy-loaded sidebar scanning, message-scroll targeting, transient browser retries, restart-safe browser cancellation, platform-independent Chrome profile validation, and x64 Windows drag/drop pointer handling.
-- Expanded archive validation to recompute message links/counts, code/table payloads, asset hashes/sizes, search mappings, and RAG consistency.
-- Replaced empty packages, empty tests, invalid placeholder scripts, empty documentation index, empty `.gitignore`, and Markdown-wrapped invalid `nuitka.toml`.
-- Prevented UI use of private controller browser APIs.
-- Made controller shutdown idempotent.
-- Corrected conversation search focus and selected-item state handling.
-- Preserved archive validity when rebuilding `summary.json` by updating the manifest hash and validation status.
+- Removed the fixed 900-second total export deadline while meaningful scan progress continues.
+- Changed readiness timeout behavior to detect a true no-progress stall instead of total elapsed export time.
+- Prevented a permanently broken or stalled image from blocking virtualized scrolling forever.
+- Separated image-loading indicators from blocking ChatGPT loading indicators.
+- Prevented spinner-only DOM churn from resetting semantic message stabilization indefinitely.
+- Filtered decorative favicon and interface images from conversation image extraction.
+- Restricted ChatGPT attachment-control fallback to actual attachment resources.
+- Prevented image HTTP errors from triggering a 180-second attachment-control scan.
+- Removed unnecessary top-reset/down-scan behavior caused by misrouted image assets.
+- Prevented duplicate export workflows from interleaving one shared Playwright context.
+- Prevented archive publication races from failing with `FileExistsError`.
+- Corrected archive titles that were previously derived from the first assistant heading instead of the sidebar title.
+- Added stable archive suffixes when two conversations share the same visible title.
+- Replaced long Windows temporary asset names with short same-directory temporary files.
+- Hardened atomic JSON replacement against transient Windows sharing denials.
+- Corrected exact CRLF/LF code validation by comparing UTF-8 bytes rather than newline-translated text.
+- Prevented a stable zero-message DOM from being treated as a complete conversation.
+- Added current `data-message-id` message-container compatibility.
+- Corrected Launch Chrome profile resolution so a blank or regular Chrome root uses ContextVault's managed profile.
+- Removed unsafe automatic fallback from a failed managed launch to an unrelated CDP browser.
+- Corrected user cancellation logging so expected interruption is reported at information level rather than as a false browser failure.
+- Added ignore rules for browser profiles, checkpoints, logs, partial files, invalid recovery files, and short temporary files.
 
-### Security
+### Security and privacy
 
-- Added archive-relative path traversal rejection, safe root containment checks, Windows-safe filename normalization, atomic file publication, direct-child archive deletion restrictions, image integrity verification, and deterministic SHA-256 validation.
+- Documented `data/chrome-user-data` as sensitive local session data.
+- Preserved path traversal rejection and safe root containment.
+- Preserved direct-child archive deletion restrictions.
+- Preserved archive-relative asset validation and SHA-256 integrity checks.
+- Prevented personal project documentation and runtime profile data from being included in the public source tree.
+
+### Validation
+
+- Windows GitHub Actions source CI passed on Python 3.12.
+- The forensic source suite passed 81 tests.
+- JSON/TOML parsing, Python AST validation, repository path checks, dependency synchronization, browser-worker lifecycle, security checks, archive validation, checkpoint recovery, and export exclusivity regressions passed.
+- The tag-triggered Windows Nuitka build remains authoritative for the final portable release artifact.
+
+## [0.1.0] - 2026-07-28
+
+### Added
+
+- Initial public Windows desktop application.
+- CustomTkinter user interface with Dashboard, Conversations, Archives, Export History, Settings, Logs, and About pages.
+- Dedicated Playwright browser worker using Google Chrome Stable.
+- Managed persistent Chrome profile and explicit CDP connection workflow.
+- Conversation scanning, progressive loading, parsing, asset extraction, archive generation, and archive validation.
+- Portable archive files, RAG documents, summaries, statistics, logs, and SHA-256 hashes.
+- Settings persistence, export history, task management, cancellation, and notifications.
+- Nuitka OneDir build configuration and GitHub Actions workflows.
+- Initial public documentation and MIT license.
+
+### Known limitations in 0.1.0
+
+- Large exports could exhaust a fixed readiness deadline.
+- Browser-rendered image placeholders could block scrolling.
+- Decorative image routing could trigger attachment fallback.
+- Concurrent export requests could interleave and collide.
+- Version labels in several documents were inconsistent with the public tag.
+
+[Unreleased]: https://github.com/vibtools/ContextVault/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/vibtools/ContextVault/releases/tag/v0.2.0
+[0.1.0]: https://github.com/vibtools/ContextVault/releases/tag/v0.1.0

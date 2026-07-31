@@ -1,5 +1,5 @@
 # ==========================================================
-# ContextVault v1.0
+# ContextVault v0.2.0
 # Official Dependencies
 # https://github.com/vibtools/ContextVault
 # ==========================================================

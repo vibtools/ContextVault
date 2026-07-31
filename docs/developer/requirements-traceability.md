@@ -1,32 +1,111 @@
-# Requirements Traceability and Forensic Status
+# Requirements Traceability
 
-`PASS` means source, configuration, documentation, or automated evidence satisfies the frozen requirement. `FAIL` means mandatory evidence is absent or the exact frozen requirement cannot yet be certified. The complete 124-item release matrix is in [`release-validation.md`](release-validation.md).
+This matrix connects public requirements to implementation, tests, and documentation.
 
-| Source specification | Requirement group | Evidence | Status |
-|---|---|---|---:|
-| `PROJECT-OVERVIEW.md` | Windows desktop ChatGPT archive application, Python 3.12+, Chrome Stable | `src/`, README, models, browser layer | PASS |
-| `PROJECT-ARCHITECTURE.md` | UI → controller → workers → browser/parser → archive layering | `src/ui`, `src/controllers`, `src/core`, `src/browser`, `src/parsers` | PASS |
-| `PROJECT-CODING-STANDARDS.md` | typed, modular, documented Python; deterministic behavior | production modules, AST/compile tests, audit scans | PASS |
-| `THREADING-STANDARD.md` | one managed executor, queue events, browser thread ownership, cancellation and cleanup | `task_manager.py`, `session_worker.py`, browser-worker tests | PASS |
-| `ERROR-HANDLING-STANDARD.md` | explicit errors, logging, cleanup, retries, user-safe notifications | message-specific retry, recovery reload/resume, degraded placeholder, services/core/browser/controller/UI | PASS |
-| `JSON-SCHEMA-STANDARD.md` | UTF-8, root object, camelCase, common envelope, schemas, atomic writes | `json_io.py`, per-message checkpoint round trips, timestamp/status schema fields, `config/schemas/`, tests | PASS |
-| `ARCHIVE-FORMAT-FREEZE-SPECIFICATION.md` | all mandatory files/folders, asset references, RAG, logs, manifest, validation, hashes | frozen final layout preserved; exact-byte code validation, additive timestamp/capture fields, builder/validator regression tests | PASS |
-| `FEATURE-FREEZE-SPECIFICATION.md` | export, rich assets, history, settings, validation, cancellation/resume; no out-of-scope systems | controller/core/services/UI | PASS |
-| `CONTEXTVAULT-UI-FEATURE-FREEZE.md` | one dark window, frozen pages/actions/progress/status/shortcuts/context menu/drop | `src/ui/` | PASS |
-| `CONTEXTVAULT-OFFICIAL-UI-TECHNOLOGY-FREEZE.md` | CustomTkinter application UI only | `src/ui/`, locked dependency, import-boundary test | PASS |
-| `CONTEXTVAULT-BROWSER-AUTOMATION-TECHNOLOGY-FREEZE.md` | Playwright + official Chrome Stable + persistent profile/CDP; no bundled Chromium | `browser_manager.py`, `session_worker.py`, configuration/docs | PASS (source: dedicated non-standard persistent automation profile; custom non-standard profiles remain supported) |
-| Browser freeze runtime proof | real authenticated profile, extensions, live scan/load/export, CDP | requires Windows/Chrome smoke test | FAIL |
-| `CONTEXTVAULT-OFFICIAL-MODULES-AND-DEPENDENCIES-FREEZE.md` | approved runtime packages only and exact versions | requirements/pyproject synchronization test | PASS |
-| `DEPENDENCY-INTEGRITY-AND-BUILD-RELIABILITY-POLICY.md` | exact dependency verification and fail-fast environment checker | `requirements.lock`, `checkmodules.py`, CI | PASS (source) |
-| Locked dependency runtime installation | exact modules installed together on official Windows environment | current Linux environment differs and lacks packages | FAIL |
-| `CONTEXTVAULT-BUILD-AND-RELEASE-PIPELINE-FREEZE.md` | GitHub Actions, Nuitka, MSVC, OneDir, Windows x64 ZIP/checksum | build/release scripts, TOML, workflow, fixture packager test | PASS (configuration) |
-| Build pipeline execution | official GitHub Actions run, Nuitka compile, artifact upload, release | not executed; GitHub repository was empty | FAIL |
-| Exact distribution structure | required `runtime/` hierarchy and no runtime binaries beside EXE | source creates required folders/resources, but compiled DLL/PYD placement is unproven and may conflict with standard OneDir | FAIL |
-| `CONTEXTVAULT-AI-ZERO-FREEDOM-RULES.md` | frozen scope, architecture, files, APIs, modules, and behavior preserved | original-file comparison and implementation audit | PASS |
-| AI development/review/audit prompts | full discovery, implementation, review, fixes, documentation | forensic audit evidence and 55 tests | PASS |
-| `RELEASE-CHECKLIST.md` | every release checkpoint classified | `release-validation.md`: 124/124 evaluated | PASS |
-| Stable release approval | local build, CI, portable runtime, clean Windows, performance, release tag | mandatory external gates remain open | FAIL |
+## User workflow
 
-## Final interpretation
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Launch separate Chrome | browser manager profile resolution | browser launch tests | Quick start, Browser automation |
+| Manual ChatGPT login | managed profile workflow | operational smoke test | Installation, Privacy |
+| Scan conversations | sidebar scan | title and parser tests | Usage |
+| Select and export | controller and task pipeline | export exclusivity tests | Usage |
+| Manage archives | archive service | archive tests | Usage |
 
-The source tree is a complete, internally validated **release candidate**. It is not a stable portable Windows release until every FAIL gate in the release matrix passes. No external validation is represented as completed.
+## Browser ownership and concurrency
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| One Playwright owner | browser session worker | worker serialization tests | Architecture |
+| Composite export exclusivity | workflow gate | duplicate submission test | Browser automation |
+| Lease release after failure or cancel | task done callback | exclusivity and task tests | Internal API |
+| Expected cancellation | worker interruption path | cancellation log test | Troubleshooting |
+
+## Readiness and large conversations
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| No zero-message completion | readiness policy | zero-message tests | Browser automation |
+| One empty-shell recovery | reload policy | idle empty DOM tests | Troubleshooting |
+| Progress can exceed stall interval | progress timestamps | 445-message test | Release notes |
+| Stalled image bounded | image grace policy | stalled-image tests | Settings |
+| Spinner separated from loader | observer state | spinner test | Browser automation |
+| Semantic stability | message signature | image churn tests | Architecture |
+
+## Message integrity
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Checkpoint before scroll | checkpoint callback | incremental tests | Archive format |
+| Atomic JSON | checkpoint store | round-trip tests | Archive format |
+| Exact code bytes | byte writer and validator | CRLF test | Troubleshooting |
+| Retry failed message | retry policy | reload and resume tests | Settings |
+| Degraded placeholder | capture status | degraded tests | Usage |
+| Timestamp provenance | parser and models | timestamp tests | Archive format |
+
+## Asset handling
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Explicit resource kind | pipeline and loader signature | routing regressions | Browser automation |
+| Favicon filtering | parser | parser regressions | Release notes |
+| Attachment fallback only for attachment | browser manager | asset routing tests | Troubleshooting |
+| Authenticated retrieval | browser context | source review and smoke test | Known limitations |
+
+## Titles and publication
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Sidebar title canonical | controller and pipeline | title tests | Usage |
+| Remove UI or project context | title normalization | sidebar tests | Browser automation |
+| Stable collision suffix | archive builder | archive naming tests | Archive format |
+| Atomic publish collision | publication loop | concurrent publish test | Release notes |
+| Preserve old archive on failed overwrite | staging and replacement | rollback test | Usage |
+
+## Windows filesystem
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Short temporary names | byte writer and archive builder | short temp test | Release notes |
+| Same-target JSON serialization | JSON writer | concurrency test | Architecture |
+| Sharing-denial retry | JSON writer | Windows replace test | Troubleshooting |
+| Safe filenames | sanitizer | security tests | Archive format |
+| Root containment | path utilities | traversal tests | Security |
+
+## Archive validation
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Required paths | validator | archive tests | Archive format |
+| Hash and size | validator | tamper tests | Release verification |
+| Message links and counts | validator | regression tests | Archive format |
+| Asset hashes | validator | asset tamper test | Archive format |
+| RAG consistency | validator | RAG count test | Archive format |
+| Warning and error distinction | validation model | degraded archive test | Usage |
+
+## Configuration
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Validated settings | Pydantic settings | config tests | Settings |
+| Default retry count 5 | defaults, model, schema | repository tests | README |
+| Worker values 1, 2, 4, 8 | validator | settings tests | Settings |
+| Delay Auto, Fast, Normal, Safe | validator | settings tests | Settings |
+| Memory Low, Balanced, High | validator | settings tests | Settings |
+| Invalid recovery | config service | service test | Troubleshooting |
+
+## Build and release
+
+| Requirement | Implementation | Tests or evidence | Documentation |
+|---|---|---|---|
+| Windows source CI | `ci.yml` | Actions run | Release validation |
+| Nuitka OneDir | build script and config | tag workflow | Release process |
+| Verified ZIP | package script | ZIP test and checksum | Release verification |
+| Automatic release assets | `release.yml` | tag run | Release process |
+| Version consistency | release checklist | grep and manual review | Versioning |
+
+## Public documentation boundary
+
+Public requirements are defined by root README, changelog, support, security, contribution files, documentation under `docs/`, source and configuration, tests, and successful CI or release evidence.
+
+No unavailable private document is required for public use or contribution.

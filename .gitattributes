@@ -133,3 +133,13 @@ build/** export-ignore
 # ----------------------------------------------------------------
 
 .github/** text eol=lf
+
+# ----------------------------------------------------------------
+# Repository metadata and lock files
+# ----------------------------------------------------------------
+
+*.lock         text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+.editorconfig  text eol=lf
+LICENSE        text eol=lf

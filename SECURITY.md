@@ -1,336 +1,170 @@
-# 🔒 ContextVault Security Policy
+# ContextVault Security Policy
 
-> **Version:** 1.0 (Frozen)
+ContextVault processes authenticated browser sessions and potentially private conversation content. Security reports are treated seriously.
 
-The security of **ContextVault** is important to us.
+## Supported versions
 
-We appreciate responsible security research and encourage the responsible disclosure of security vulnerabilities.
+| Version | Support |
+|---|---|
+| 0.2.x | Full support |
+| 0.1.x | Critical security fixes when practical |
+| Development branch | No stability guarantee |
+| Older or unofficial builds | Unsupported |
 
-This document explains how to report security issues and how security is managed within the project.
+## Reporting a vulnerability
 
----
+Do **not** publish vulnerability details in a public GitHub issue, discussion, pull request, log, or screenshot.
 
-# Supported Versions
+Preferred reporting path:
 
-Security updates are provided only for officially supported releases.
+1. Open the repository's **Security** tab.
+2. Select **Advisories** or **Report a vulnerability** when GitHub private vulnerability reporting is available.
+3. Submit the report privately.
 
-| Version              | Supported                   |
-| -------------------- | --------------------------- |
-| Latest Stable        | ✅ Yes                       |
-| Previous Stable      | ✅ Yes (Critical fixes only) |
-| Beta Releases        | ⚠ Best effort               |
-| Development Branch   | ❌ No guarantee              |
-| Unsupported Releases | ❌ No                        |
+When the private-reporting option is not visible, contact the repository maintainers through the repository owner's public contact channel and request a private security contact. Do not include exploit details in that initial public message.
 
----
+A useful report includes:
 
-# Reporting a Security Vulnerability
+- affected ContextVault version;
+- Windows version;
+- clear impact;
+- reproduction steps;
+- proof of concept, when safe;
+- affected files or components;
+- whether authenticated browser data or exported content is exposed;
+- suggested mitigation, when known.
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+## Expected handling
 
-Instead, report them privately to the project maintainers.
+Maintainers aim to acknowledge the report, reproduce and assess severity, limit further exposure, prepare and test a fix, publish a corrected release, and coordinate disclosure when appropriate.
 
-Your report should include:
+Response time depends on severity and maintainer availability. Do not assume a report is accepted until it is confirmed.
 
-* A clear description of the vulnerability
-* Steps to reproduce the issue
-* Expected behavior
-* Actual behavior
-* Affected version(s)
-* Operating system
-* Proof-of-concept (if safe)
-* Screenshots or logs (if applicable)
+## Security scope
 
-Please avoid including sensitive personal information.
+Relevant reports include:
 
----
+- arbitrary file read or write;
+- path traversal;
+- archive extraction or publication outside the selected root;
+- command injection;
+- unsafe subprocess construction;
+- credential, cookie, token, or session exposure;
+- unauthorized access to `data\chrome-user-data`;
+- insecure temporary files;
+- unsafe archive deletion;
+- validation bypass;
+- corrupted archive accepted as valid;
+- dependency or build-pipeline compromise;
+- browser automation that weakens Chrome security;
+- sensitive information written to public logs;
+- malicious content causing code execution.
 
-# Responsible Disclosure
+## Usually not a security vulnerability
 
-We request that security researchers:
+The following are generally handled as normal bugs unless they create a security impact:
 
-* Report vulnerabilities privately.
-* Allow reasonable time for investigation.
-* Avoid public disclosure until a fix is available.
-* Avoid exploiting vulnerabilities beyond what is necessary to demonstrate the issue.
-* Avoid accessing or modifying data that does not belong to you.
+- cosmetic UI defects;
+- ordinary export failures;
+- unsupported ChatGPT DOM changes;
+- spelling or documentation mistakes;
+- slow exports;
+- missing assets that are clearly reported;
+- user deletion of their own archive;
+- unsupported operating systems or browsers.
 
-Responsible disclosure helps protect all users of the project.
+## Local data security
 
----
+ContextVault stores runtime data locally.
 
-# What to Report
+### Chrome profile
 
-Examples include:
+```text
+data\chrome-user-data\
+```
 
-* Remote Code Execution (RCE)
-* Arbitrary File Read
-* Arbitrary File Write
-* Path Traversal
-* Privilege Escalation
-* Authentication Bypass
-* Authorization Issues
-* Command Injection
-* Unsafe Deserialization
-* Directory Traversal
-* Insecure Temporary File Handling
-* Credential Exposure
-* Information Disclosure
-* Browser Automation Security Issues
-* Archive Integrity Issues
-* Dependency Supply Chain Risks
-* Build Pipeline Security Issues
+This directory may contain cookies, authenticated session state, Chrome profile preferences, site data, and browser cache.
 
----
+Treat it as sensitive. Do not commit it to Git, upload it to an issue, include it in a public ZIP, copy it to an untrusted device, or share it with another person.
 
-# What Is Usually Not a Security Issue
+Anyone who can access the profile and device may be able to use its authenticated sessions.
 
-Examples include:
+### Settings, history, exports, and logs
 
-* Minor UI bugs
-* Documentation errors
-* Spelling mistakes
-* Cosmetic issues
-* Feature requests
-* General performance improvements
-* Unsupported third-party environments
+```text
+data\settings.json
+data\export_history.json
+exports\
+logs\
+```
 
----
+These paths can reveal local directories, conversation titles, URLs, timestamps, exported content, and diagnostic information.
 
-# Security Principles
+Review and redact before sharing.
 
-ContextVault follows these principles:
+## Credential handling
 
-* Least Privilege
-* Secure by Default
-* Explicit Validation
-* Defense in Depth
-* Principle of Least Surprise
-* Fail Securely
-* Minimal Attack Surface
+ContextVault does not request a ChatGPT password. Authentication is performed manually in Google Chrome.
 
-Security is considered during architecture, implementation, and release.
+No contributor may add password collection, token scraping, cookie export, hidden credential transmission, hardcoded secrets, or telemetry that exposes conversation content without an explicit approved design and disclosure.
 
----
+## Browser security
 
-# Secure Development Practices
+ContextVault must:
 
-The project follows these engineering practices:
+- use Google Chrome Stable as documented;
+- use a separate managed profile by default;
+- avoid automating the user's regular daily Chrome `User Data` root;
+- keep Playwright objects on the dedicated browser worker;
+- avoid disabling browser security controls without explicit justification;
+- close browser resources predictably;
+- avoid automatic attachment-style interaction for unrelated image resources.
 
-* Input validation
-* Output validation
-* Structured logging
-* Secure exception handling
-* Safe resource cleanup
-* Explicit permission handling
-* Version-pinned dependencies
-* Reproducible builds
+## Filesystem and archive security
 
----
+The application must preserve:
 
-# Dependency Security
+- root containment checks;
+- Windows-safe filename normalization;
+- archive-relative path validation;
+- path traversal rejection;
+- direct-child archive deletion restrictions;
+- atomic staging and publication;
+- short same-directory temporary files;
+- SHA-256 verification;
+- explicit warnings and failures.
 
-Only approved dependencies are permitted.
+Do not weaken validation to make a failing export appear successful.
 
-Before introducing a dependency, verify:
+## Dependency and build security
 
-* Active maintenance
-* Trusted source
-* Compatible license
-* Nuitka compatibility
-* GitHub Actions compatibility
-* No duplicate functionality
+Release builds must use locked dependencies and a clean Windows runner or a verified local environment.
 
-Dependencies should remain version-locked for release builds.
+Before release:
 
----
+- install from `requirements.lock` and `requirements-build.lock`;
+- run the forensic tests;
+- build with the official Nuitka configuration;
+- verify the packaged ZIP;
+- publish the SHA-256 checksum;
+- review workflow logs;
+- avoid untrusted release assets.
 
-# Secrets Management
+## Log sharing checklist
 
-Never commit:
+Before attaching a log:
 
-* Passwords
-* API Keys
-* OAuth Tokens
-* Access Tokens
-* SSH Keys
-* Private Certificates
-* Session Cookies
-* Encryption Keys
+- remove cookies, tokens, and authorization headers;
+- remove personal conversation text;
+- remove private file paths where unnecessary;
+- remove email addresses and account identifiers;
+- keep the error, timestamp, operation, and relevant stack trace;
+- state the application version and Windows version.
 
-Secrets must never appear in:
+## Disclosure credit
 
-* Source code
-* Configuration files committed to Git
-* Documentation
-* Logs
-* Example files
+Maintainers may credit reporters with permission. Anonymous reporting is respected when the reporting channel supports it.
 
----
+## Privacy guidance
 
-# Sensitive Data
-
-Avoid storing sensitive information.
-
-If sensitive data must be processed:
-
-* Validate input.
-* Minimize retention.
-* Clear temporary data promptly.
-* Avoid unnecessary logging.
-
----
-
-# Browser Security
-
-Browser automation must:
-
-* Use the official supported browser architecture.
-* Respect user browser profiles.
-* Avoid unsafe browser modifications.
-* Close browser resources correctly.
-
-The project must never intentionally weaken browser security settings.
-
----
-
-# File System Security
-
-The application must:
-
-* Validate file paths.
-* Avoid path traversal.
-* Avoid unsafe overwrite operations.
-* Use relative project paths where appropriate.
-* Handle permissions gracefully.
-
-Never trust externally supplied file paths without validation.
-
----
-
-# Archive Security
-
-Generated archives must:
-
-* Preserve data integrity.
-* Include required metadata.
-* Avoid writing outside the intended destination.
-* Reject invalid or corrupted structures.
-
----
-
-# Input Validation
-
-Validate all external input including:
-
-* User input
-* Configuration files
-* JSON
-* HTML
-* Metadata
-* Archive manifests
-* File paths
-
-Reject malformed or unexpected data early.
-
----
-
-# Logging Policy
-
-Logs should contain enough information to diagnose problems.
-
-Logs must never expose:
-
-* Passwords
-* Tokens
-* Secrets
-* Personal credentials
-* Sensitive session information
-
----
-
-# Build Security
-
-Every release should be built from a clean environment.
-
-The release process should verify:
-
-* Locked dependency versions
-* Build integrity
-* Package integrity
-* Runtime completeness
-
-Do not publish builds with unresolved security concerns.
-
----
-
-# AI Security Requirements
-
-AI-generated code must:
-
-* Follow secure coding practices.
-* Avoid introducing vulnerabilities.
-* Preserve existing security controls.
-* Validate external input.
-* Avoid unsafe subprocess usage.
-* Avoid hardcoded secrets.
-* Respect frozen project architecture.
-
-AI must never weaken security in order to simplify implementation.
-
----
-
-# Security Review Checklist
-
-Before approving a release, verify:
-
-* No hardcoded secrets
-* No sensitive information in logs
-* Input validation implemented
-* Safe file operations
-* Safe browser operations
-* Dependency integrity verified
-* Version locking verified
-* Runtime integrity verified
-* Build pipeline integrity verified
-
----
-
-# Coordinated Disclosure Process
-
-When a valid vulnerability is reported:
-
-1. Acknowledge receipt.
-2. Confirm the issue.
-3. Assess severity.
-4. Develop a fix.
-5. Test the fix.
-6. Publish the fix.
-7. Disclose the issue responsibly after remediation, when appropriate.
-
----
-
-# Scope
-
-This policy applies to:
-
-* Source Code
-* Build Pipeline
-* GitHub Actions
-* Runtime Package
-* Browser Automation
-* Archive Generation
-* Official Releases
-* Official Documentation
-
-Third-party software is governed by its own security policies.
-
----
-
-# Final Statement
-
-Security is a continuous engineering process rather than a one-time review.
-
-Every contribution, pull request, dependency update, and release should improve or preserve the project's security posture.
-
-No feature, optimization, or architectural change should reduce the security, integrity, or reliability of ContextVault.
+Read [Privacy and local data](docs/security/privacy-and-local-data.md) for user-facing retention and backup guidance.

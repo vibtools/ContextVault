@@ -49,7 +49,7 @@ def main() -> int:
     if sys.version_info < (3, 12):
         failures.append(f"Python 3.12+ required; found {platform.python_version()}")
     else:
-        print(f"PASS Python {platform.python_version()}")
+        print(f"PASS Python {platform.python_version()} ({sys.executable})")
 
     for relative in REQUIRED_PATHS:
         path = ROOT / relative
@@ -70,7 +70,7 @@ def main() -> int:
     if not args.skip_modules:
         result = subprocess.run([sys.executable, str(ROOT / "scripts/test/checkmodules.py")], cwd=ROOT)
         if result.returncode != 0:
-            failures.append("Locked module verification failed.")
+            failures.append("Locked module verification failed for the active Python interpreter.")
 
     if not args.skip_chrome:
         chrome = _find_chrome()

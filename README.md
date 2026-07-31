@@ -4,76 +4,192 @@
 
 # ContextVault
 
-ContextVault is an open-source Windows desktop application from **Vib Tools** that preserves fully loaded ChatGPT conversations as portable, lossless, integrity-checked, RAG-ready archives.
+[![CI](https://github.com/vibtools/ContextVault/actions/workflows/ci.yml/badge.svg)](https://github.com/vibtools/ContextVault/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/vibtools/ContextVault?display_name=tag)](https://github.com/vibtools/ContextVault/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)](docs/getting-started/installation.md)
 
-Version **1.0.0** follows the frozen project specifications in `project/`: CustomTkinter UI, Playwright automation against official Google Chrome Stable, a persistent automation profile, a dedicated browser worker, deterministic JSON, complete asset extraction, archive validation, Nuitka OneDir packaging, and GitHub Actions release automation.
+**ContextVault v0.2.0** is a Windows desktop application that saves fully loaded ChatGPT conversations as portable, integrity-checked, RAG-ready archives.
 
-## Core capabilities
+It is designed for people who want a dependable local copy of important AI conversations without manually copying messages one by one. You do not need to be a developer to use the portable Windows release.
 
-- Launch official Google Chrome Stable with a ContextVault-owned persistent profile, use an explicitly configured non-standard profile root, or connect over CDP.
-- Scan ChatGPT conversation links and progressively load a selected conversation.
-- Checkpoint every settled virtualized message window before scrolling: extract message content, atomically save message JSON, save exact code bytes, verify both immediately, and only then continue.
-- Retry a failed message in place, perform at most one recovery reload per failed message key while preserving completed checkpoints, and preserve an exhausted message as an explicit degraded placeholder instead of discarding the whole conversation.
-- Preserve ordered messages, roles, timestamp provenance, capture time, HTML, Markdown, plain text, code, images, attachments, tables, and citations.
-- Generate mandatory metadata, summaries, search indexes, statistics, logs, hashes, and RAG documents.
-- Validate structure, schemas, asset references, message sequencing, file size, and SHA-256 integrity.
-- Manage archives, export history, settings, logs, cancellation, and current-session resume from one dark-mode CustomTkinter window.
-- Produce a portable Windows x64 Nuitka OneDir ZIP through the official workflow.
+> **Application version:** 0.2.0
+> **Archive schema version:** 1.0
+> These versions describe different things. The application can receive bug fixes without changing the archive format.
 
-## Architecture
+## What ContextVault does
 
-```text
-CustomTkinter UI
-    ↓
-ApplicationController
-    ↓
-TaskManager / queue / ThreadPoolExecutor
-    ↓
-BrowserSessionWorker (dedicated lane + asyncio loop)
-    ↓
-Playwright + Google Chrome Stable
-    ↓
-ConversationParser + Pydantic models
-    ↓
-ArchiveBuilder / RagBuilder / ArchiveValidator
-    ↓
-Portable ContextVault archive
-```
+ContextVault opens a separate Google Chrome window, uses the ChatGPT session that you log into manually, scans your conversation list, loads a selected conversation, and exports its content to a local folder.
 
-Browser exports are serialized so Playwright objects never leave their owning worker thread. The UI receives typed queue events and never performs browser, parsing, archive, or filesystem-heavy work directly. During deep scanning, verified messages are retained in a temporary checkpoint store under `data/checkpoints/`; the store is removed after successful publication, cancellation, or failure. The frozen final archive layout is unchanged.
+A completed archive can include:
+
+- ordered user and assistant messages;
+- Markdown, HTML, and plain text;
+- code blocks preserved as exact UTF-8 bytes;
+- images, tables, citations, and optional attachments;
+- conversation metadata and timestamps when ChatGPT exposes them reliably;
+- search indexes, statistics, summaries, and RAG documents;
+- SHA-256 hashes and validation logs;
+- explicit warnings when a message or browser-rendered image could not be captured perfectly.
+
+ContextVault does **not** ask for your ChatGPT password. Login happens directly inside the Chrome window.
+
+## What is improved in v0.2.0
+
+Version 0.2.0 is an export reliability and stability update. It addresses the main failure modes found during large real-world exports:
+
+- large conversations are no longer limited by one fixed 900-second total deadline while meaningful progress continues;
+- every stable message window is checkpointed and verified before the browser scrolls away;
+- a stalled browser image or spinner receives a bounded grace period instead of blocking scrolling forever;
+- decorative favicons are no longer treated as conversation images;
+- image download failures no longer trigger attachment-control scanning;
+- duplicate export requests cannot interleave browser workflows;
+- the sidebar conversation title is used as the canonical archive title;
+- archive publication collisions are resolved atomically;
+- long Windows temporary paths use short same-directory temporary names;
+- expected user cancellation is logged as cancellation rather than a false browser failure.
+
+See [v0.2.0 release notes](docs/release-notes/0.2.0.md) for the complete change list.
 
 ## Requirements
 
+### Portable Windows release
+
 - Windows 10 or Windows 11, 64-bit
-- Python 3.12+ for source execution
 - Google Chrome Stable
-- A manually authenticated ChatGPT session in the ContextVault automation profile or an explicitly configured non-standard Chrome profile
+- A ChatGPT account that you can log into manually
+- Enough free disk space for the exported conversation and its assets
 
-ContextVault does not bundle Chromium, does not request ChatGPT credentials, and does not introduce cloud synchronization, SQLite, embeddings, semantic search, plugins, or an in-app archive viewer in version 1.0.
+Python is **not** required for the portable release.
 
-## Source setup
+### Running from source
 
-```powershell
-py -3.12 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.lock
-python scripts/test/check_environment.py
-python scripts/test/run_tests.py
-python src/app.py
+- Windows 10 or Windows 11, 64-bit
+- Python 3.12
+- Google Chrome Stable
+- Dependencies from `requirements.lock`
+
+ContextVault uses the installed Google Chrome channel. Do not run `playwright install`; the project does not use a bundled Chromium browser.
+
+## Download and run the portable release
+
+1. Open the repository's **Releases** page.
+2. Download both files:
+   - `ContextVault-Windows-x64.zip`
+   - `ContextVault-Windows-x64.zip.sha256`
+3. Verify the checksum by following [Release verification](docs/guides/release-verification.md).
+4. Extract the complete ZIP to a normal folder such as:
+   ```text
+   C:\Apps\ContextVault
+   ```
+5. Do not run the application from inside the ZIP.
+6. Open the extracted folder and run:
+   ```text
+   ContextVault.exe
+   ```
+
+Keep the complete extracted folder together. Do not move only the EXE away from its runtime files.
+
+## First export: beginner-friendly steps
+
+### 1. Open Settings
+
+For the safest first run:
+
+- leave **Browser Profile Root** blank;
+- keep **Profile** as `Default`;
+- keep **Verify Export** enabled;
+- keep **Attachments** disabled unless you specifically need them;
+- keep **Delay Mode** as `Normal`;
+- keep **Message Retry Count** as `5`.
+
+When Browser Profile Root is blank, ContextVault creates its own reusable Chrome profile under:
+
+```text
+data\chrome-user-data
 ```
 
-`run.bat` is the supported repository launcher. Do not run `playwright install`; the frozen browser architecture uses the installed Google Chrome channel.
+This is separate from your normal daily Chrome profile.
 
-## Basic workflow
+### 2. Select Launch Chrome
 
-1. Open **Settings** and configure the profile name, CDP endpoint, export directory, asset options, and **Message Retry Count**. Leave **Browser Profile Root** blank to use ContextVault's persistent isolated profile.
-2. Select **Launch Chrome**. Use **Connect** only for a Chrome instance that you intentionally started with remote debugging and a non-standard user-data directory.
-3. Log in manually inside the ContextVault Chrome window and open ChatGPT. The session persists for later launches.
-4. Select **Scan**, choose conversations, and export.
-5. Use **Archives** to open Markdown, open the folder, validate, rebuild a summary, or delete an archive.
-6. Review **Logs** and **Export History** for operational details.
+Choose **Launch Chrome** in ContextVault.
 
-## Archive layout
+A separate official Google Chrome window opens. Log in to ChatGPT manually in that window. ContextVault never asks you to type your ChatGPT credentials into the application.
+
+Use **Connect** only when you intentionally started Chrome with remote debugging. Most users should use **Launch Chrome**.
+
+### 3. Scan conversations
+
+After ChatGPT has loaded:
+
+1. Return to ContextVault.
+2. Open the **Conversations** page.
+3. Select **Scan**.
+4. Wait for the conversation list to appear.
+
+### 4. Select and export
+
+1. Select one or more conversations.
+2. Choose **Export Selected** or **Export All**.
+3. Leave the ContextVault Chrome window open.
+4. Do not manually scroll the active conversation while the export is running.
+5. Follow progress in the application and the **Logs** page.
+
+Large conversations may take time. A long runtime is not automatically a failure. ContextVault continues while it detects meaningful progress and stops only when its no-progress policy is exhausted or an unrecoverable error occurs.
+
+### 5. Review the result
+
+Open the **Archives** page to:
+
+- open the generated folder;
+- open `conversation.md`;
+- validate the archive again;
+- rebuild the summary;
+- delete an archive you no longer need.
+
+A successful export ends with archive verification and publication. Warnings are preserved in the archive metadata and logs.
+
+## Default settings
+
+| Area | Setting | Default |
+|---|---|---:|
+| Browser | Browser | Google Chrome |
+| Browser | Browser Profile Root | Blank — use managed profile |
+| Browser | Profile | `Default` |
+| Browser | CDP Endpoint | `http://127.0.0.1:9222` |
+| Export | Default Folder | `exports` |
+| Export | Archive Name | `{title}` |
+| Export | Overwrite | Off |
+| Export | Compress | Off |
+| Export | Verify Export | On |
+| Assets | Images | On |
+| Assets | Code | On |
+| Assets | Tables | On |
+| Assets | Attachments | Off |
+| Performance | Worker Threads | 4 |
+| Performance | Message Retry Count | 5 |
+| Performance | Delay Mode | `Normal` |
+| Performance | Memory Mode | `Balanced` |
+
+Read [Configuration](docs/configuration/settings.md) before changing advanced browser or performance options.
+
+## Image-render grace periods
+
+ChatGPT may display an image placeholder or spinner that never finishes rendering in the browser. ContextVault waits for a bounded period before continuing the deep scan:
+
+| Delay mode | Image-render grace |
+|---|---:|
+| Fast | 8 seconds |
+| Normal | 20 seconds |
+| Safe | 45 seconds |
+| Auto | 20 seconds |
+
+Continuing after this warning does not disable archive validation. Actual asset download and archive integrity checks remain authoritative.
+
+## Archive structure
+
+Each export is a self-contained directory:
 
 ```text
 archive-name/
@@ -100,45 +216,130 @@ archive-name/
     └── validation.log
 ```
 
-All JSON output is UTF-8 without BOM, four-space indented, camelCase, root-object based, and versioned. Every generated JSON document has `generatedAt`; every message records `capturedAt`, sequence order, capture status, attempts, and timestamp provenance. Real source timestamps are retained when available; unavailable source times remain `null`/`unknown` rather than being invented. RAG chunks preserve message boundaries.
+The archive format is documented in [Archive format](docs/features/archive-format.md).
 
-## Testing and audit commands
+## Local data and privacy
 
-```powershell
-python scripts/test/checkmodules.py
-python scripts/test/check_environment.py
-python scripts/test/run_tests.py
-```
-
-The 55-test automated suite covers incremental message checkpoints, exact CRLF code-byte validation, configured retry/reload/degraded-message recovery, timestamped manifests, delayed DOM readiness, parsing, repeated-message preservation, opaque attachments, archive generation/compression, deep consistency validation, rollback, atomic writes, cancellation, browser-worker lifecycle, settings/history, path security, repository configuration, AST validity, and architectural import boundaries.
-
-## Windows build and release
-
-Install the locked build tool after runtime dependencies:
-
-```powershell
-python -m pip install -r requirements.lock -r requirements-build.lock
-python scripts/build/build_windows.py
-python scripts/release/package_release.py
-```
-
-The build script requires Windows x64 and an active Visual Studio Build Tools/MSVC environment. It reads `nuitka.toml`, generates the detected Nuitka `build/*.dist/ContextVault.exe` output, and the release packager creates:
+ContextVault stores runtime data locally. Important locations include:
 
 ```text
-artifacts/ContextVault-Windows-x64.zip
-artifacts/ContextVault-Windows-x64.zip.sha256
+data\chrome-user-data\     Reusable authenticated Chrome profile
+data\settings.json         Application settings
+data\export_history.json   Export history
+exports\                   Default archive destination
+logs\                      Application logs
 ```
 
-`.github/workflows/release.yml` performs the official Windows test, build, ZIP verification, artifact upload, and tag-triggered GitHub Release publication.
+Treat `data\chrome-user-data` as sensitive. It may contain cookies and authenticated browser session state. Never commit it to Git, upload it publicly, or share it with another person.
+
+Exported conversations may contain private information. Protect and back them up according to your own security requirements.
+
+Read [Privacy and local data](docs/security/privacy-and-local-data.md).
+
+## Upgrading from v0.1.0
+
+Do not overwrite your only copy of local data.
+
+Before replacing an older portable folder, preserve:
+
+```text
+data\chrome-user-data\
+data\settings.json
+data\export_history.json
+exports\
+```
+
+Then extract v0.2.0 into a new folder and copy back only the personal runtime data you need. See [Upgrading](docs/getting-started/upgrading.md).
+
+## Troubleshooting
+
+Start with [Common issues](docs/troubleshooting/common-issues.md).
+
+Useful rules:
+
+- use **Launch Chrome** for the normal workflow;
+- do not select your normal Chrome `User Data` folder;
+- do not close the ContextVault Chrome window during export;
+- do not replace individual source files inside a portable build;
+- upgrade the complete application package when a fix is released;
+- keep **Verify Export** enabled;
+- review `logs\` and the archive's `logs\export.log` before reporting a problem.
+
+## Run from source
+
+```powershell
+git clone https://github.com/vibtools/ContextVault.git
+cd ContextVault
+
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements.lock
+
+python scripts/test/check_environment.py
+python scripts/test/run_tests.py
+python src/app.py
+```
+
+`run.bat` is the supported repository launcher after dependencies are installed.
+
+## Testing and build
+
+For release-candidate verification, use the isolated environment helper:
+
+```powershell
+python scripts/release/verify_release_candidate.py --ref main --skip-chrome
+```
+
+It creates `.venv-release`, installs the exact locked dependencies, verifies metadata and source integrity, runs all tests, compiles Python files, and checks staged and unstaged diffs. It does not change the global Python environment.
+
+For local Windows Nuitka tooling:
+
+```powershell
+python scripts/release/verify_release_candidate.py `
+    --ref main `
+    --include-build-dependencies
+
+.\.venv-release\Scripts\python.exe scripts/build/build_windows.py
+.\.venv-release\Scripts\python.exe scripts/release/package_release.py
+```
+
+The official tag-triggered workflow builds and verifies the Windows x64 OneDir package before publishing release assets.
 
 ## Documentation
 
-Start at [`docs/index.md`](docs/index.md). Frozen engineering requirements and architecture decisions are retained under [`project/`](project/). Implementation traceability is documented in [`docs/developer/requirements-traceability.md`](docs/developer/requirements-traceability.md), with the forensic findings in [`docs/developer/forensic-audit-report.md`](docs/developer/forensic-audit-report.md) and all 124 release gates in [`docs/developer/release-validation.md`](docs/developer/release-validation.md).
+### For users
 
-## Security and privacy
+- [Documentation home](docs/index.md)
+- [Quick start](docs/getting-started/quick-start.md)
+- [Installation](docs/getting-started/installation.md)
+- [Usage guide](docs/guides/usage.md)
+- [Settings](docs/configuration/settings.md)
+- [Troubleshooting](docs/troubleshooting/common-issues.md)
+- [FAQ](docs/faq/index.md)
+- [Known limitations](docs/guides/known-limitations.md)
+- [Privacy and local data](docs/security/privacy-and-local-data.md)
 
-ContextVault uses the selected local Chrome profile and authenticated browser context. It does not store passwords. Export paths and archive references are validated, writes use staging/atomic replacement, and untrusted filenames are normalized for Windows portability. Report vulnerabilities through [`SECURITY.md`](SECURITY.md).
+### For developers and maintainers
+
+- [Architecture](docs/developer/architecture.md)
+- [Internal API](docs/api/internal-api.md)
+- [Implementation compliance](docs/developer/implementation-compliance.md)
+- [Requirements traceability](docs/developer/requirements-traceability.md)
+- [Release process](docs/developer/release-process.md)
+- [Release validation](docs/developer/release-validation.md)
+- [Versioning](docs/developer/versioning.md)
+
+The public documentation under `docs/` is the source of truth for public behavior and contribution requirements.
+
+## Support, security, and contributing
+
+- General support: [SUPPORT.md](SUPPORT.md)
+- Security reporting: [SECURITY.md](SECURITY.md)
+- Contributions: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Community standards: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## License
 
-MIT License. See [`LICENSE`](LICENSE).
+ContextVault is released under the MIT License. See [LICENSE](LICENSE).

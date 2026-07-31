@@ -26,6 +26,9 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
 
+      - name: Verify public repository boundary
+        run: python scripts/release/verify_public_tree.py
+
       - name: Install locked dependencies
         run: python -m pip install -r requirements.lock
 

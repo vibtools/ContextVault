@@ -1,455 +1,181 @@
-# 🤝 Contributing to ContextVault
+# Contributing to ContextVault
 
-First of all, thank you for your interest in contributing to **ContextVault**.
+Thank you for contributing to ContextVault.
 
-Whether you are fixing a bug, improving documentation, optimizing performance, or proposing a new feature, your contribution is appreciated.
+Contributions may include bug fixes, tests, documentation, accessibility improvements, security hardening, performance work, or carefully reviewed feature proposals.
 
-This document explains the official contribution workflow and development rules for the project.
+ContextVault prioritizes correctness, data integrity, stability, maintainability, and reproducible Windows releases.
 
----
+## Read before changing code
 
-# 📜 Project Philosophy
+Review the public documentation that applies to your work:
 
-ContextVault is developed with the following principles:
+- [Architecture](docs/developer/architecture.md)
+- [Implementation compliance](docs/developer/implementation-compliance.md)
+- [Requirements traceability](docs/developer/requirements-traceability.md)
+- [Browser automation](docs/features/browser-automation.md)
+- [Archive format](docs/features/archive-format.md)
+- [Release process](docs/developer/release-process.md)
+- [Security policy](SECURITY.md)
 
-* Stability over speed
-* Quality over quantity
-* Architecture before implementation
-* Specification before opinion
-* Long-term maintainability
-* Open collaboration
-* Production-ready engineering
+The public documentation under `docs/` is the source of truth for public behavior and contribution requirements.
 
-Every contribution should improve the project without compromising its architecture.
+## Supported technology stack
 
----
+ContextVault currently uses Python 3.12, CustomTkinter, Playwright, Google Chrome Stable, Pydantic, Beautiful Soup, Markdownify, Pillow, Tenacity, Nuitka OneDir, and GitHub Actions on Windows.
 
-# Before You Start
+Replacing a core technology, changing the archive schema, changing the browser ownership model, or altering the portable runtime layout requires prior maintainer approval.
 
-Before contributing, please read the project documentation.
+## Development setup
 
-At minimum, review:
+```powershell
+git clone https://github.com/vibtools/ContextVault.git
+cd ContextVault
 
-* project/PROJECT-OVERVIEW.md
-* project/PROJECT-ARCHITECTURE.md
-* project/PROJECT-CODING-STANDARDS.md
-* project/THREADING-STANDARD.md
-* project/ERROR-HANDLING-STANDARD.md
-* project/AI-DEVELOPMENT-GUIDELINES.md
-* project/CONTEXTVAULT-AI-ZERO-FREEDOM-RULES.md
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
 
-These documents define the project's official standards.
-
----
-
-# Ways to Contribute
-
-You can contribute by:
-
-* Fixing bugs
-* Improving performance
-* Improving documentation
-* Adding tests
-* Refactoring existing code
-* Improving accessibility
-* Improving error handling
-* Improving logging
-* Reporting bugs
-* Suggesting enhancements
-
----
-
-# Before Opening an Issue
-
-Before opening a new issue:
-
-* Search existing issues.
-* Confirm the issue has not already been reported.
-* Reproduce the problem.
-* Collect relevant logs.
-* Provide clear reproduction steps.
-
-Well-written issues help maintainers resolve problems faster.
-
----
-
-# Feature Requests
-
-Feature requests should include:
-
-* The problem being solved
-* Why the feature is useful
-* Proposed behavior
-* Alternative approaches considered
-* Potential implementation concerns
-
-Feature requests do not guarantee implementation.
-
----
-
-# Development Workflow
-
-The recommended workflow is:
-
-```text
-Fork Repository
-
-↓
-
-Create Feature Branch
-
-↓
-
-Implement Changes
-
-↓
-
-Run Local Verification
-
-↓
-
-Run Code Review
-
-↓
-
-Commit Changes
-
-↓
-
-Push Branch
-
-↓
-
-Open Pull Request
-
-↓
-
-Project Review
-
-↓
-
-Merge
+python -m pip install --upgrade pip
+python -m pip install -r requirements.lock
 ```
 
----
+Do not run `playwright install`. ContextVault uses Google Chrome Stable installed on Windows.
 
-# Branch Naming
-
-Recommended branch names:
-
-```text
-feature/archive-export
-
-feature/browser-manager
-
-bugfix/export-timeout
-
-bugfix/parser-error
-
-docs/readme-update
-
-refactor/thread-manager
-
-test/archive-validation
-```
-
-Avoid generic names such as:
-
-```text
-test
-
-fix
-
-update
-
-new
-
-temp
-
-branch1
-```
-
----
-
-# Commit Message Format
-
-Use clear, descriptive commit messages.
+## Create a focused branch
 
 Examples:
 
 ```text
-feat: add archive metadata validation
-
-fix: prevent browser timeout during export
-
-docs: update project architecture
-
-refactor: simplify worker lifecycle
-
-perf: reduce archive generation time
-
-test: add parser unit tests
+fix/image-readiness
+fix/archive-collision
+docs/upgrade-guide
+test/browser-worker-cancellation
+perf/checkpoint-processing
 ```
 
-Avoid:
+Avoid mixing unrelated changes in one pull request.
+
+## Required local checks
+
+Run these before opening a pull request:
+
+```powershell
+python scripts/test/check_environment.py --skip-chrome
+python scripts/test/run_tests.py
+python -m compileall -q src tests
+git diff --check
+```
+
+For browser behavior changes, also test with a real ContextVault-managed Chrome profile on Windows.
+
+For build or packaging changes, run:
+
+```powershell
+python -m pip install -r requirements.lock -r requirements-build.lock
+python scripts/test/check_environment.py
+python scripts/test/run_tests.py
+python scripts/build/build_windows.py
+python scripts/release/package_release.py
+```
+
+## Architecture rules
+
+### UI thread
+
+Do not perform browser automation, parsing, archive generation, network retrieval, or heavy filesystem operations directly on the UI thread.
+
+### Browser ownership
+
+All Playwright and Chrome objects must remain on the dedicated browser worker and its asyncio event loop.
+
+### Export integrity
+
+Do not weaken per-message checkpointing, exact code-byte preservation, archive validation, safe path checks, atomic publication, warning propagation, or cancellation cleanup.
+
+### Public archive compatibility
+
+Additive metadata may be introduced only with corresponding models, schemas, validation, tests, and documentation. Breaking archive-format changes require an explicit schema-version decision.
+
+### Dependencies
+
+A new dependency must be justified, maintained, license-compatible, Windows-compatible, Nuitka-compatible, and pinned consistently.
+
+## Coding expectations
+
+- Preserve existing features and backward compatibility unless a breaking change is approved.
+- Use type hints.
+- Use `pathlib` for filesystem paths.
+- Avoid hardcoded developer-specific paths.
+- Handle exceptions explicitly.
+- Do not silently ignore failures.
+- Keep logs useful without exposing credentials or session secrets.
+- Remove unused imports, dead code, debug statements, and temporary files.
+- Add regression tests for fixed defects.
+- Keep browser selectors centralized and provide evidence for selector changes.
+
+## Documentation expectations
+
+Update documentation when changing user-visible behavior, settings, requirements, archive files, browser behavior, upgrade behavior, known limitations, security, privacy, or release procedures.
+
+At minimum, consider:
 
 ```text
-update
-
-fix
-
-changes
-
-work
-
-new code
+README.md
+README.txt
+CHANGELOG.md
+docs/
 ```
 
----
+Do not refer public contributors to unavailable private files.
 
-# Pull Request Requirements
+## Commit messages
 
-Every Pull Request should:
-
-* Explain the purpose of the change.
-* Describe the implementation.
-* List any breaking changes.
-* Reference related issues (if applicable).
-* Include screenshots for UI changes (when applicable).
-
-Small, focused pull requests are preferred.
-
----
-
-# Coding Standards
-
-All code must follow:
-
-* project/PROJECT-CODING-STANDARDS.md
-* project/PROJECT-ARCHITECTURE.md
-* project/THREADING-STANDARD.md
-* project/ERROR-HANDLING-STANDARD.md
-
-Do not submit code that violates these standards.
-
----
-
-# Architecture Rules
-
-Contributors must not:
-
-* Change the project architecture.
-* Replace approved technologies.
-* Change the runtime layout.
-* Change the build pipeline.
-* Introduce unofficial dependencies.
-
-Architectural changes require prior approval.
-
----
-
-# Approved Technology Stack
-
-The project officially uses:
-
-* Python 3.12+
-* CustomTkinter
-* Playwright
-* Google Chrome
-* Nuitka
-
-Do not replace these technologies without an approved architecture revision.
-
----
-
-# Dependency Policy
-
-Before introducing a new dependency, verify:
-
-* The Python Standard Library cannot solve the problem.
-* The dependency is actively maintained.
-* The dependency is compatible with the project's license.
-* The dependency works with Nuitka.
-* The dependency works with GitHub Actions.
-* The dependency does not duplicate existing functionality.
-
-Unauthorized dependencies will not be accepted.
-
----
-
-# Threading Rules
-
-Background work must never execute on the UI thread.
-
-Use the approved architecture:
+Use clear, descriptive messages. Conventional prefixes are encouraged:
 
 ```text
-UI
-
-↓
-
-Queue
-
-↓
-
-ThreadPoolExecutor
-
-↓
-
-Worker
-
-↓
-
-asyncio
-
-↓
-
-Playwright
+fix: bound stalled image readiness
+docs: add v0.2.0 upgrade guide
+test: cover duplicate export submission
+security: harden archive path validation
+build: verify packaged runtime assets
 ```
 
-Do not bypass this model.
+## Pull request contents
 
----
+A good pull request explains the problem, root cause, implementation, compatibility, tests, security, performance, documentation, and remaining limitations.
 
-# Error Handling
+Use the repository pull request template.
 
-Do not ignore exceptions.
+## Security issues
 
-Every failure should:
+Do not include vulnerability details in a public issue or pull request. Follow [SECURITY.md](SECURITY.md).
 
-* Be handled.
-* Be logged.
-* Produce meaningful diagnostics.
-* Preserve application stability.
+## Personal and runtime data
 
-Silent failures are prohibited.
+Never commit:
 
----
+```text
+data/chrome-user-data/
+data/settings.json
+data/export_history.json
+data/checkpoints/
+exports/
+logs/
+*.partial-*
+*.invalid-*
+.cv-*.tmp
+```
 
-# Documentation
+Before sharing logs, remove conversation titles, URLs, local paths, cookies, tokens, and personal content.
 
-If your contribution changes public behavior, update the relevant documentation.
+## Review criteria
 
-This includes:
+Reviewers evaluate correctness, regression risk, browser thread ownership, archive integrity, Windows behavior, error handling, security, performance, dependency impact, tests, documentation, and build compatibility.
 
-* README
-* CHANGELOG
-* Examples
-* Project documentation
+## Community conduct
 
-Documentation should evolve with the code.
+Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
----
+## License
 
-# Testing
-
-Before submitting a Pull Request, verify that:
-
-* The project builds successfully.
-* Existing functionality still works.
-* New functionality behaves as expected.
-* No regressions were introduced.
-
-If practical, include tests for new functionality.
-
----
-
-# Build Compatibility
-
-Every contribution must remain compatible with:
-
-* GitHub Actions
-* Nuitka OneDir
-* Portable Runtime
-* Windows
-
-Do not rely on local machine configuration.
-
----
-
-# AI-Assisted Contributions
-
-AI-generated code is welcome.
-
-However, contributors remain responsible for:
-
-* Reviewing generated code
-* Verifying correctness
-* Ensuring architectural compliance
-* Maintaining code quality
-
-AI output must satisfy the same standards as manually written code.
-
----
-
-# Code Review
-
-Every contribution may be reviewed for:
-
-* Architecture
-* Build compatibility
-* Thread safety
-* Error handling
-* Performance
-* Security
-* Maintainability
-* Documentation
-
-Review decisions are based on project standards, not personal coding preferences.
-
----
-
-# What Will Likely Be Rejected
-
-Contributions that:
-
-* Break the architecture
-* Introduce unnecessary complexity
-* Reduce maintainability
-* Add unofficial dependencies
-* Break GitHub Actions
-* Break Nuitka compatibility
-* Reduce UI responsiveness
-* Introduce security risks
-* Violate frozen specifications
-
----
-
-# Code of Collaboration
-
-Please be:
-
-* Respectful
-* Professional
-* Constructive
-* Patient
-
-Focus discussions on technical merit and objective evidence.
-
----
-
-# Questions
-
-If you are unsure about a design decision:
-
-* Open a discussion.
-* Ask before implementing major changes.
-* Reference the relevant project documentation.
-
-It is better to clarify early than to redesign later.
-
----
-
-# License
-
-By submitting a contribution, you agree that your contribution may be distributed under the same license as the ContextVault project.
-
----
-
-# Final Note
-
-ContextVault values **quality over quantity**.
-
-A small, well-designed contribution that respects the project's architecture is more valuable than a large change that introduces technical debt.
-
-Thank you for helping make ContextVault a stable, maintainable, and production-ready open-source project.
+By contributing, you agree that your contribution may be distributed under the project's MIT License.

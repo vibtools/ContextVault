@@ -9,8 +9,8 @@
         "displayName": "ContextVault",
         "description": "Open-source AI conversation archive platform for preserving complete context in a portable, lossless format.",
         "summary": "Preserve AI Context. Forever.",
-        "version": "1.0.0",
-        "status": "release-candidate",
+        "version": "0.2.0",
+        "status": "stable",
         "visibility": "public",
         "category": "desktop-application",
         "keywords": [
@@ -104,7 +104,7 @@
         "distribution": "Nuitka OneDir",
         "browser": "Google Chrome Stable",
         "browserAutomation": "Playwright",
-        "browserProfile": "Existing Chrome Profile",
+        "browserProfile": "ContextVault-managed persistent Chrome profile",
         "browserExtensions": true,
         "runtimeDirectory": "runtime/"
     },
@@ -124,7 +124,7 @@
         "examples": "examples/",
         "configuration": "config/",
         "data": "data/",
-        "project": "project/"
+        "project": "docs/"
     },
     "dependencies": {
         "required": [
@@ -166,7 +166,7 @@
     "release": {
         "strategy": "GitHub Releases",
         "versioning": "Semantic Versioning",
-        "latestVersion": "1.0.0",
+        "latestVersion": "0.2.0",
         "releaseNotes": "docs/release-notes/"
     },
     "quality": {
@@ -203,7 +203,7 @@
     },
     "metadata": {
         "createdAt": "2026-07-28T00:00:00Z",
-        "updatedAt": "2026-07-28T00:00:00Z",
+        "updatedAt": "2026-07-31T19:29:00Z",
         "manifestAuthor": "Vib Tools",
         "generator": "YGit CLI / ContextVault forensic completion",
         "specification": "VPMS",
