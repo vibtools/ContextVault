@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from src.config.constants import APPLICATION_VERSION, ARCHIVE_SCHEMA_VERSION
 from src.models.base import ContextVaultModel
 from src.models.conversation import ConversationMessage
 
@@ -14,11 +15,11 @@ from src.models.conversation import ConversationMessage
 class JsonEnvelope(ContextVaultModel):
     """Common metadata required by generated JSON documents."""
 
-    schema_version: str = "1.0"
+    schema_version: str = ARCHIVE_SCHEMA_VERSION
     format: str = "contextvault"
     generated_by: str = "ContextVault"
     generated_at: datetime
-    version: str = "1.0.0"
+    version: str = APPLICATION_VERSION
 
 
 class ConversationData(ContextVaultModel):
@@ -29,6 +30,10 @@ class ConversationData(ContextVaultModel):
     url: str
     platform_name: str
     created_at: datetime | None = None
+    updated_at: datetime | None = None
+    exported_at: datetime | None = None
+    timezone: str = "unknown"
+    timestamp_source: str = "unknown"
     messages: list[ConversationMessage]
 
 
@@ -54,6 +59,28 @@ class MetadataData(ContextVaultModel):
     character_count: int
     word_count: int
     estimated_token_count: int
+    updated_date: datetime | None = None
+    export_timestamp_utc: datetime | None = None
+    export_timestamp_local: datetime | None = None
+    timezone: str = "unknown"
+    timestamp_source: str = "unknown"
+    duration_seconds: int | None = None
+    export_uuid: str = ""
+    contextvault_version: str = APPLICATION_VERSION
+    export_engine_version: str = APPLICATION_VERSION
+    schema_version: str = ARCHIVE_SCHEMA_VERSION
+    browser_name: str = "unavailable"
+    browser_version: str = "unavailable"
+    browser_profile: str = "unavailable"
+    chatgpt_workspace: str | None = None
+    chatgpt_model: str | None = None
+    images: int = Field(default=0, ge=0)
+    attachments: int = Field(default=0, ge=0)
+    code_blocks: int = Field(default=0, ge=0)
+    tables: int = Field(default=0, ge=0)
+    estimated_size: int = Field(default=0, ge=0)
+    skipped_messages: int = Field(default=0, ge=0)
+    capture_warnings: list[str] = Field(default_factory=list)
 
 
 class MetadataDocument(JsonEnvelope):
@@ -155,6 +182,17 @@ class ManifestData(ContextVaultModel):
     export_date: datetime
     conversation_id: str
     conversation_title: str
+    conversation_started_at: datetime | None = None
+    conversation_ended_at: datetime | None = None
+    exported_at: datetime | None = None
+    timezone: str = "unknown"
+    timestamp_source: str = "unknown"
+    duration_seconds: int | None = None
+    total_messages: int = 0
+    verified_messages: int = 0
+    skipped_messages: int = 0
+    message_retry_count: int = 0
+    incremental_verification: bool = False
     file_mapping: dict[str, str]
     folder_mapping: dict[str, str]
     hash_information: list[FileHash]

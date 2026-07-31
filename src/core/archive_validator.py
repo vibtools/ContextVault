@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from pydantic import ValidationError
 
@@ -85,7 +87,13 @@ class ArchiveValidator:
         manifest = documents.get("manifest.json")
         conversation = documents.get("conversation.json")
         if isinstance(conversation, ConversationDocument):
-            self._validate_messages(root, conversation, errors, warnings)
+            self._validate_messages(
+                root,
+                conversation,
+                errors,
+                warnings,
+                require_messages=conversation.version == APPLICATION_VERSION,
+            )
             self._validate_markdown(root, conversation, errors)
         self._validate_document_consistency(documents, errors)
         if isinstance(manifest, ManifestDocument) and verify_hashes:
@@ -96,6 +104,7 @@ class ArchiveValidator:
             errors=errors,
             warnings=warnings,
             checked_files=checked_files,
+            details=self._validation_details(documents, checked_files, verify_hashes),
         )
         if errors:
             LOGGER.error("Archive validation failed for %s: %s", root, errors)
@@ -125,11 +134,13 @@ class ArchiveValidator:
             "schemaVersion": (getattr(document, "schema_version", None), ARCHIVE_SCHEMA_VERSION),
             "format": (getattr(document, "format", None), ARCHIVE_FORMAT),
             "generatedBy": (getattr(document, "generated_by", None), "ContextVault"),
-            "version": (getattr(document, "version", None), APPLICATION_VERSION),
         }
         for field_name, (actual, required) in expected.items():
             if actual != required:
                 errors.append(f"{relative} {field_name} is {actual!r}; expected {required!r}.")
+        version = str(getattr(document, "version", "") or "")
+        if not _is_semantic_version(version):
+            errors.append(f"{relative} version is not a valid semantic version: {version!r}.")
 
     @staticmethod
     def _validated_file(root: Path, reference: str, errors: list[str]) -> Path | None:
@@ -151,6 +162,8 @@ class ArchiveValidator:
         conversation: ConversationDocument,
         errors: list[str],
         warnings: list[str],
+        *,
+        require_messages: bool,
     ) -> None:
         messages = conversation.data.messages
         identifiers: set[str] = set()
@@ -199,11 +212,8 @@ class ArchiveValidator:
                 if code.file_path:
                     target = cls._validated_file(root, code.file_path, errors)
                     if target is not None:
-                        try:
-                            if target.read_text(encoding="utf-8") != code.raw_code:
-                                errors.append(f"Code reference {code.id} file content does not match rawCode.")
-                        except UnicodeError:
-                            errors.append(f"Code reference {code.id} is not valid UTF-8: {code.file_path}")
+                        if target.read_bytes() != code.raw_code.encode("utf-8"):
+                            errors.append(f"Code reference {code.id} file content does not match rawCode.")
 
             for asset in [*message.image_references, *message.attachment_references]:
                 if not asset.file_path:
@@ -251,7 +261,10 @@ class ArchiveValidator:
                 if citation.file_path:
                     cls._validated_file(root, citation.file_path, errors)
         if not messages:
-            warnings.append("Conversation contains no messages.")
+            if require_messages:
+                errors.append("Conversation contains no messages; v0.2.0 exports cannot be partial or empty.")
+            else:
+                warnings.append("Conversation contains no messages.")
 
     @staticmethod
     def _validate_markdown(root: Path, conversation: ConversationDocument, errors: list[str]) -> None:
@@ -283,12 +296,22 @@ class ArchiveValidator:
         user_messages = sum(message.role == "user" for message in messages)
         assistant_messages = sum(message.role == "assistant" for message in messages)
 
+        envelope_versions = {
+            relative: document.version
+            for relative, document in documents.items()
+            if hasattr(document, "version")
+        }
+        distinct_versions = set(envelope_versions.values())
+        if len(distinct_versions) > 1:
+            errors.append(f"Archive JSON envelope versions are inconsistent: {envelope_versions}")
+        envelope_version = conversation.version
+
         manifest = documents.get("manifest.json")
         if isinstance(manifest, ManifestDocument):
             comparisons = {
                 "conversationId": (manifest.data.conversation_id, conversation.data.conversation_id),
                 "conversationTitle": (manifest.data.conversation_title, conversation.data.title),
-                "archiveVersion": (manifest.data.archive_version, APPLICATION_VERSION),
+                "archiveVersion": (manifest.data.archive_version, envelope_version),
                 "archiveFormatVersion": (manifest.data.archive_format_version, ARCHIVE_SCHEMA_VERSION),
             }
             for field_name, (actual, expected) in comparisons.items():
@@ -320,6 +343,8 @@ class ArchiveValidator:
             for field_name, (actual, expected) in comparisons.items():
                 if actual != expected:
                     errors.append(f"metadata.json {field_name} does not match conversation.json.")
+            if metadata.version == APPLICATION_VERSION:
+                ArchiveValidator._validate_current_metadata(metadata, conversation, errors)
 
         statistics = documents.get("statistics.json")
         if isinstance(statistics, StatisticsDocument):
@@ -425,6 +450,85 @@ class ArchiveValidator:
                     errors.append("rag/documents.json does not match conversation.json and rag/chunks.json.")
 
     @staticmethod
+    def _validate_current_metadata(
+        metadata: MetadataDocument,
+        conversation: ConversationDocument,
+        errors: list[str],
+    ) -> None:
+        data = metadata.data
+        try:
+            UUID(data.export_uuid)
+        except (ValueError, TypeError, AttributeError):
+            errors.append("metadata.json exportUuid is missing or invalid.")
+        for field_name, value in (
+            ("exportTimestampUtc", data.export_timestamp_utc),
+            ("exportTimestampLocal", data.export_timestamp_local),
+        ):
+            if value is None or value.tzinfo is None:
+                errors.append(f"metadata.json {field_name} must be timezone-aware.")
+        if data.export_timestamp_utc is not None and data.export_date != data.export_timestamp_utc:
+            errors.append("metadata.json exportDate does not match exportTimestampUtc.")
+        expected_values = {
+            "contextvaultVersion": (data.contextvault_version, metadata.version),
+            "exportEngineVersion": (data.export_engine_version, APPLICATION_VERSION),
+            "schemaVersion": (data.schema_version, metadata.schema_version),
+        }
+        for field_name, (actual, expected) in expected_values.items():
+            if actual != expected:
+                errors.append(f"metadata.json {field_name} is {actual!r}; expected {expected!r}.")
+        for field_name, value in (
+            ("browserName", data.browser_name),
+            ("browserVersion", data.browser_version),
+            ("browserProfile", data.browser_profile),
+        ):
+            if not value.strip() or value.strip().casefold() == "unavailable":
+                errors.append(f"metadata.json {field_name} is incomplete.")
+        if data.estimated_size <= 0:
+            errors.append("metadata.json estimatedSize must be greater than zero.")
+        messages = conversation.data.messages
+        expected_counts = {
+            "images": (data.images, sum(len(item.image_references) for item in messages)),
+            "attachments": (data.attachments, sum(len(item.attachment_references) for item in messages)),
+            "codeBlocks": (data.code_blocks, sum(len(item.code_references) for item in messages)),
+            "tables": (data.tables, sum(len(item.table_references) for item in messages)),
+        }
+        for field_name, (actual, expected) in expected_counts.items():
+            if actual != expected:
+                errors.append(f"metadata.json {field_name} is {actual}; expected {expected}.")
+
+    @staticmethod
+    def _validation_details(
+        documents: dict[str, Any],
+        checked_files: int,
+        verify_hashes: bool,
+    ) -> dict[str, Any]:
+        details: dict[str, Any] = {
+            "checkedFiles": checked_files,
+            "hashVerification": "enabled" if verify_hashes else "deferred",
+        }
+        metadata = documents.get("metadata.json")
+        if isinstance(metadata, MetadataDocument):
+            details["metadata"] = {
+                "archiveVersion": metadata.version,
+                "conversationId": metadata.data.conversation_id,
+                "exportUuid": metadata.data.export_uuid or "legacy",
+                "browser": metadata.data.browser_name,
+                "browserVersion": metadata.data.browser_version,
+                "estimatedSize": metadata.data.estimated_size,
+            }
+        statistics = documents.get("statistics.json")
+        if isinstance(statistics, StatisticsDocument):
+            details["statistics"] = {
+                "messages": statistics.data.total_messages,
+                "images": statistics.data.images,
+                "attachments": statistics.data.attachments,
+                "codeBlocks": statistics.data.code_blocks,
+                "tables": statistics.data.tables,
+                "characters": statistics.data.total_characters,
+            }
+        return details
+
+    @staticmethod
     def _validate_hashes(root: Path, manifest: ManifestDocument, errors: list[str]) -> None:
         expected_paths = {
             path.relative_to(root).as_posix()
@@ -460,3 +564,10 @@ class ArchiveValidator:
         unexpected = sorted(set(declared_paths) - expected_paths)
         if unexpected:
             errors.append(f"Manifest contains unexpected hash entries: {unexpected}")
+
+
+_SEMANTIC_VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+
+
+def _is_semantic_version(value: str) -> bool:
+    return bool(_SEMANTIC_VERSION_PATTERN.fullmatch(value))

@@ -6,6 +6,12 @@ All notable changes to ContextVault are documented here. The project follows Sem
 
 ### Fixed
 
+- Corrected archive code validation to compare exact UTF-8 bytes instead of newline-translated text, eliminating false `file content does not match rawCode` failures for CRLF code blocks on Windows.
+- Replaced end-of-conversation-only message validation with incremental per-message checkpointing before each upward scroll. Each stabilized message is parsed, written as atomic JSON, its code bytes are saved and read back, and the window is committed before scrolling continues.
+- Added bounded message-specific retry, one recovery page reload with checkpoint resume, and explicit degraded-message preservation after configured retries are exhausted so one malformed message does not invalidate an otherwise usable conversation.
+- Added source timestamp provenance, per-message capture timestamps/status/attempts, and conversation start/end/export/timezone metadata without changing the frozen archive folder layout.
+- Prevented the conversation loader from treating a stable zero-message DOM as complete; exports now wait through delayed React/project-chat rendering, observe semantic loading states, accumulate virtualized messages, and fail only after the bounded readiness policy is exhausted.
+- Added current `data-message-id` message-container compatibility and parser coverage without changing the archive format.
 - Serialized same-target JSON commits and added bounded Windows sharing-denial retries so concurrent atomic writes no longer fail with transient `PermissionError: Access is denied`.
 - Corrected Launch Chrome so a blank or regular Chrome profile root resolves to ContextVault's persistent non-standard `data/chrome-user-data` directory instead of forwarding `about:blank` into an already-running daily Chrome process.
 - Removed the invalid automatic CDP fallback from Launch Chrome; Connect remains an explicit operation for intentionally remote-debugging-enabled Chrome instances.
@@ -13,7 +19,7 @@ All notable changes to ContextVault are documented here. The project follows Sem
 
 ### Validation
 
-- 41 source and regression tests pass, including isolated browser-profile resolution, no-CDP-fallback enforcement, browser-worker lifecycle, repeated-message preservation, opaque attachment detection, deep archive consistency, atomic replacement, and rollback.
+- 55 source and regression tests pass, including exact CRLF code preservation, per-message checkpoint persistence, retry/reload/resume, exhausted-message degradation, timestamp metadata, isolated browser-profile resolution, browser-worker lifecycle, deep archive consistency, atomic replacement, and rollback.
 - All 124 frozen release-checklist items are explicitly classified PASS or FAIL.
 - Official Windows GitHub Actions execution, Nuitka binary generation, and clean Windows 10/11 Chrome-profile smoke testing remain mandatory before a stable public release.
 
@@ -35,6 +41,10 @@ All notable changes to ContextVault are documented here. The project follows Sem
 
 ### Fixed
 
+- Corrected archive code validation to compare exact UTF-8 bytes instead of newline-translated text, eliminating false `file content does not match rawCode` failures for CRLF code blocks on Windows.
+- Replaced end-of-conversation-only message validation with incremental per-message checkpointing before each upward scroll. Each stabilized message is parsed, written as atomic JSON, its code bytes are saved and read back, and the window is committed before scrolling continues.
+- Added bounded message-specific retry, one recovery page reload with checkpoint resume, and explicit degraded-message preservation after configured retries are exhausted so one malformed message does not invalidate an otherwise usable conversation.
+- Added source timestamp provenance, per-message capture timestamps/status/attempts, and conversation start/end/export/timezone metadata without changing the frozen archive folder layout.
 - Hardened lazy-loaded sidebar scanning, message-scroll targeting, transient browser retries, restart-safe browser cancellation, platform-independent Chrome profile validation, and x64 Windows drag/drop pointer handling.
 - Expanded archive validation to recompute message links/counts, code/table payloads, asset hashes/sizes, search mappings, and RAG consistency.
 - Replaced empty packages, empty tests, invalid placeholder scripts, empty documentation index, empty `.gitignore`, and Markdown-wrapped invalid `nuitka.toml`.

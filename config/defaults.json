@@ -19,7 +19,7 @@
         "images": true,
         "code": true,
         "tables": true,
-        "attachments": true,
+        "attachments": false,
         "markdown": true,
         "json": true,
         "summary": true,
@@ -28,6 +28,7 @@
     },
     "performance": {
         "workerThreads": 4,
+        "messageRetryCount": 5,
         "delayMode": "Normal",
         "memoryMode": "Balanced"
     }

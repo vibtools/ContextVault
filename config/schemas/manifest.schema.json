@@ -52,6 +52,92 @@
                     "title": "Conversationtitle",
                     "type": "string"
                 },
+                "conversationStartedAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Conversationstartedat"
+                },
+                "conversationEndedAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Conversationendedat"
+                },
+                "exportedAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Exportedat"
+                },
+                "timezone": {
+                    "default": "unknown",
+                    "title": "Timezone",
+                    "type": "string"
+                },
+                "timestampSource": {
+                    "default": "unknown",
+                    "title": "Timestampsource",
+                    "type": "string"
+                },
+                "durationSeconds": {
+                    "anyOf": [
+                        {
+                            "type": "integer"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Durationseconds"
+                },
+                "totalMessages": {
+                    "default": 0,
+                    "title": "Totalmessages",
+                    "type": "integer"
+                },
+                "verifiedMessages": {
+                    "default": 0,
+                    "title": "Verifiedmessages",
+                    "type": "integer"
+                },
+                "skippedMessages": {
+                    "default": 0,
+                    "title": "Skippedmessages",
+                    "type": "integer"
+                },
+                "messageRetryCount": {
+                    "default": 0,
+                    "title": "Messageretrycount",
+                    "type": "integer"
+                },
+                "incrementalVerification": {
+                    "default": false,
+                    "title": "Incrementalverification",
+                    "type": "boolean"
+                },
                 "fileMapping": {
                     "additionalProperties": {
                         "type": "string"

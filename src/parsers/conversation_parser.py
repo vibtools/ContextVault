@@ -6,7 +6,8 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from typing import Any
+from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
 from uuid import NAMESPACE_URL, uuid5
 
 from bs4 import BeautifulSoup, Tag
@@ -46,6 +47,17 @@ class ConversationParser:
         title: str,
         platform_name: str = "ChatGPT",
         exported_at: datetime,
+        exported_at_local: datetime | None = None,
+        export_id: str | None = None,
+        browser_name: str = "unavailable",
+        browser_version: str = "unavailable",
+        browser_profile: str = "unavailable",
+        chatgpt_workspace: str | None = None,
+        chatgpt_model: str | None = None,
+        estimated_size: int = 0,
+        source_message_count: int | None = None,
+        source_asset_counts: dict[str, int] | None = None,
+        readiness: dict[str, Any] | None = None,
     ) -> ConversationRecord:
         """Parse a complete conversation document while preserving rich content."""
         soup = BeautifulSoup(html, "html.parser")
@@ -72,16 +84,29 @@ class ConversationParser:
 
         self._resequence_and_link(messages)
         combined_text = "\n".join(message.plain_text for message in messages)
-        return ConversationRecord(
-            conversation_id=conversation_id,
-            title=title.strip() or "Untitled Conversation",
-            url=url,
-            platform_name=platform_name,
-            created_at=self._conversation_created_at(soup),
-            exported_at=exported_at,
-            language=self._detect_language(combined_text),
-            messages=messages,
-        )
+        record_data: dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "title": title.strip() or "Untitled Conversation",
+            "url": url,
+            "platform_name": platform_name,
+            "created_at": self._conversation_created_at(soup),
+            "exported_at": exported_at,
+            "exported_at_local": exported_at_local,
+            "language": self._detect_language(combined_text),
+            "browser_name": browser_name or "unavailable",
+            "browser_version": browser_version or "unavailable",
+            "browser_profile": browser_profile or "unavailable",
+            "chatgpt_workspace": chatgpt_workspace,
+            "chatgpt_model": chatgpt_model,
+            "estimated_size": max(0, int(estimated_size)),
+            "source_message_count": source_message_count,
+            "source_asset_counts": dict(source_asset_counts or {}),
+            "readiness": dict(readiness or {}),
+            "messages": messages,
+        }
+        if export_id:
+            record_data["export_id"] = export_id
+        return ConversationRecord.model_validate(record_data)
 
     def _find_message_nodes(self, soup: BeautifulSoup) -> list[Tag]:
         for selector in self.MESSAGE_SELECTORS:
@@ -132,7 +157,7 @@ class ConversationParser:
         message_id = str(source_id)
         code_references = self._extract_code(content_node, message_id)
         image_references = self._extract_images(content_node, message_id, base_url)
-        attachment_references, citation_references = self._extract_links(content_node, message_id, base_url)
+        attachment_references, citation_references = self._extract_links(node, message_id, base_url)
         table_references = self._extract_tables(content_node, message_id)
         timestamp = self._extract_timestamp(node)
         return ConversationMessage(
@@ -237,42 +262,79 @@ class ConversationParser:
         attachments: list[AttachmentReference] = []
         citations: list[CitationReference] = []
         seen: set[str] = set()
-        for index, anchor in enumerate(content_node.select("a[href]"), start=1):
-            source = urljoin(base_url, str(anchor.get("href") or "").strip())
-            if not source or source in seen:
-                continue
-            seen.add(source)
-            label = anchor.get_text(" ", strip=True)
-            parsed = urlparse(source)
-            filename = Path(parsed.path).name
-            suffix = Path(filename).suffix.lower()
+        candidates = content_node.select(
+            "a[href], [data-download-url], [data-file-url], [data-href], [data-url], "
+            "[data-file-id], [data-filename], [data-file-name], "
+            "[data-testid*=file], [data-testid*=download], "
+            "[aria-label*=Download], [aria-label*=download]"
+        )
+        for index, node in enumerate(candidates, start=1):
+            label = node.get_text(" ", strip=True)
             attributes = " ".join(
                 [
-                    str(anchor.get("data-testid") or ""),
-                    str(anchor.get("aria-label") or ""),
-                    " ".join(str(value) for value in anchor.get("class", [])),
+                    str(node.get("download") or ""),
+                    str(node.get("data-testid") or ""),
+                    str(node.get("aria-label") or ""),
+                    str(node.get("data-file-id") or ""),
+                    str(node.get("data-filename") or ""),
+                    str(node.get("data-file-name") or ""),
+                    " ".join(str(value) for value in node.get("class", [])),
                 ]
             ).lower()
+            source_value = next(
+                (
+                    str(node.get(attribute) or "").strip()
+                    for attribute in ("href", "data-download-url", "data-file-url", "data-href", "data-url")
+                    if str(node.get(attribute) or "").strip()
+                ),
+                "",
+            )
+            absolute_source = urljoin(base_url, source_value) if source_value else ""
+            filename = _attachment_filename(node, absolute_source, label)
+            parsed = urlparse(absolute_source)
+            suffix = Path(filename).suffix.lower()
             label_suffix = Path(label).suffix.lower()
+            path_and_query = f"{parsed.path}?{parsed.query}".lower()
+            has_file_identity = bool(
+                str(node.get("data-file-id") or "").strip()
+                or str(node.get("data-filename") or "").strip()
+                or str(node.get("data-file-name") or "").strip()
+            )
+            semantic_attachment = bool(
+                re.search(r"(?:^|[\s_-])(attachment|download|file)(?:$|[\s_-])", attributes)
+            )
             is_attachment = (
-                anchor.has_attr("download")
+                node.has_attr("download")
                 or suffix in SUPPORTED_ASSET_EXTENSIONS
                 or label_suffix in SUPPORTED_ASSET_EXTENSIONS
-                or any(marker in attributes for marker in ("attachment", "download", "file"))
+                or semantic_attachment
+                or any(
+                    marker in path_and_query
+                    for marker in ("/backend-api/files/", "/files/", "file-service", "download=")
+                )
+                or parsed.scheme in {"sandbox", "blob"}
+                or has_file_identity
             )
             if is_attachment:
+                source = absolute_source or _synthetic_attachment_source(node, message_id, filename, index)
+                if not source or source in seen:
+                    continue
+                seen.add(source)
                 attachments.append(
                     AttachmentReference(
                         id=f"{message_id}-attachment-{index:03d}",
                         source_url=source,
-                        original_name=filename or label or f"attachment-{index:03d}",
+                        original_name=filename or f"attachment-{index:03d}",
                     )
                 )
             elif parsed.scheme in {"http", "https"}:
+                if absolute_source in seen:
+                    continue
+                seen.add(absolute_source)
                 citations.append(
                     CitationReference(
                         id=f"{message_id}-citation-{index:03d}",
-                        url=source,
+                        url=absolute_source,
                         label=label,
                     )
                 )
@@ -366,6 +428,42 @@ def _to_int(value: object) -> int | None:
         return int(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def _synthetic_attachment_source(node: Tag, message_id: str, filename: str, index: int) -> str:
+    """Build a stable locator only when ChatGPT exposes no direct file URL."""
+    file_id = str(node.get("data-file-id") or "").strip()
+    query_parts = [f"messageId={quote(message_id, safe='')}", f"index={index}"]
+    if file_id:
+        query_parts.append(f"fileId={quote(file_id, safe='')}")
+    if filename:
+        query_parts.append(f"filename={quote(filename, safe='')}")
+    if not file_id and not filename:
+        return ""
+    return "contextvault-chatgpt-attachment:?" + "&".join(query_parts)
+
+
+def _attachment_filename(node: Tag, source: str, label: str) -> str:
+    """Resolve the best available attachment filename without inventing metadata."""
+    parsed = urlparse(source)
+    query = parse_qs(parsed.query)
+    candidates: list[str] = [
+        str(node.get("download") or ""),
+        str(node.get("data-filename") or ""),
+        str(node.get("data-file-name") or ""),
+        *(query.get("filename") or []),
+        *(query.get("file_name") or []),
+        Path(parsed.path).name,
+        label,
+    ]
+    for candidate in candidates:
+        clean = unquote(str(candidate or "")).strip().strip('"')
+        if not clean:
+            continue
+        clean = re.sub(r"^(?:download|file|attachment)\s*[:\-]\s*", "", clean, flags=re.IGNORECASE)
+        if clean:
+            return clean
+    return ""
 
 
 def _table_markdown(headers: list[str], rows: list[list[str]]) -> str:

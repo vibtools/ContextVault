@@ -50,7 +50,7 @@ No alternate UI framework, browser engine, database, cloud service, embeddings s
 ## 4. Verification performed
 
 - Full source AST and bytecode compilation.
-- 39 standard-library regression tests: isolated browser-profile resolution, explicit CDP behavior, parser, archive, validator, rollback, atomic writes, security, services, task manager, browser worker, configuration, dependency synchronization, and architecture boundaries.
+- 55 standard-library regression tests: isolated browser-profile resolution, explicit CDP behavior, parser, archive, validator, rollback, atomic writes, security, services, task manager, browser worker, configuration, dependency synchronization, and architecture boundaries.
 - JSON/TOML parsing and schema/resource presence checks.
 - Original-file preservation comparison.
 - Hygiene scans for merge markers, unfinished implementation markers, wildcard imports, bare exceptions, debug calls, and credential-like content.
@@ -73,3 +73,13 @@ No known critical source defect remains. The following mandatory validation is e
 ## 6. Audit conclusion
 
 The repository is a complete, internally validated **source release candidate**. It is **not certified as a stable portable Windows release** until the FAIL gates in `release-validation.md` pass.
+
+## 7. Incremental message-integrity re-audit — 2026-07-30
+
+A production export of 272 messages completed browser deep scanning but failed final validation with repeated `Code reference ... file content does not match rawCode` errors. The re-audit traced the error to newline handling rather than failed collection: code bytes were written losslessly, while the validator used `Path.read_text()`, whose universal-newline behavior converted CRLF to LF on read. Exact-byte comparison now preserves both CRLF and LF code blocks.
+
+The same re-audit identified a reliability limitation in end-of-conversation-only validation. The browser worker now commits each settled virtualized message window through `MessageCheckpointStore` before scrolling. Message JSON is atomically round-tripped, code files are byte-verified, failed keys are retried, at most one page reload per failed key resumes from retained checkpoints, and an exhausted content fragment becomes an explicit degraded placeholder rather than aborting the complete conversation. Fatal infrastructure/storage/browser failures are not masked.
+
+Timestamp fields are additive and provenance-aware: reliable source message timestamps drive conversation start/end; unavailable source timestamps remain null/unknown; capture and export timestamps are labeled separately. The frozen final archive folder layout and public controller/browser commands remain unchanged.
+
+Verification evidence now includes 53 passing tests, including a 272-message archive with 90 CRLF code blocks, degraded-message publication with warnings, exact-byte code validation, settings persistence, page reload/resume, and exhausted-message continuation.

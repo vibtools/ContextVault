@@ -27,6 +27,7 @@ artifacts/
 # Runtime data
 data/settings.json
 data/export_history.json
+data/checkpoints/
 exports/
 logs/
 *.log

@@ -7,6 +7,7 @@ import io
 import logging
 import mimetypes
 import shutil
+import tempfile
 import threading
 import zipfile
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from typing import Any
 from uuid import uuid4
 
 from PIL import Image, UnidentifiedImageError
+from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from src.config.constants import (
     APPLICATION_VERSION,
@@ -123,10 +125,18 @@ class ArchiveBuilder:
             self._write_documents(staging_root, documents)
             self._write_markdown(staging_root, conversation, rich_markdown=settings.assets.markdown)
             self._write_rag_documents(staging_root, conversation, search_index, generated_at)
+            for warning in conversation.capture_warnings:
+                self._log(export_log, f"WARNING: {warning}")
             self._log(export_log, "Conversation documents generated")
             (staging_root / "logs" / "export.log").write_text("\n".join(export_log) + "\n", encoding="utf-8", newline="\n")
 
-            manifest = self._manifest(conversation, generated_at, [], None)
+            manifest = self._manifest(
+                conversation,
+                generated_at,
+                [],
+                None,
+                message_retry_count=settings.performance.message_retry_count,
+            )
             write_json(staging_root / "manifest.json", manifest)
             (staging_root / "logs" / "validation.log").write_text(
                 "status=PENDING\ncheckedFiles=0\n",
@@ -224,7 +234,12 @@ class ArchiveBuilder:
                     extension = CODE_EXTENSION_BY_LANGUAGE.get(code.language.lower(), ".txt")
                     filename = sanitize_filename(f"{message.sequence_number:04d}-{code.id}{extension}")
                     relative = Path("assets/code") / filename
-                    (root / relative).write_bytes(code.raw_code.encode("utf-8"))
+                    self._write_verified_bytes(
+                        root / relative,
+                        code.raw_code.encode("utf-8"),
+                        attempts=settings.performance.message_retry_count + 1,
+                        description=f"code reference {code.id}",
+                    )
                     code.file_path = relative.as_posix()
                     completed = self._asset_progress(progress_reporter, completed, total, "Code", filename)
             else:
@@ -282,7 +297,12 @@ class ArchiveBuilder:
                     extension = _image_extension(image_format, media_type, image_reference.source_url)
                     filename = sanitize_filename(f"{message.sequence_number:04d}-{image_reference.id}{extension}")
                     relative = Path("assets/images") / filename
-                    (root / relative).write_bytes(data)
+                    self._write_verified_bytes(
+                        root / relative,
+                        data,
+                        attempts=settings.performance.message_retry_count + 1,
+                        description=f"image reference {image_reference.id}",
+                    )
                     image_reference.file_path = relative.as_posix()
                     image_reference.media_type = media_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
                     image_reference.width = width
@@ -304,7 +324,12 @@ class ArchiveBuilder:
                     if target.exists():
                         target = unique_path(target)
                         relative = target.relative_to(root)
-                    target.write_bytes(data)
+                    self._write_verified_bytes(
+                        target,
+                        data,
+                        attempts=settings.performance.message_retry_count + 1,
+                        description=f"attachment reference {attachment.id}",
+                    )
                     attachment.file_path = relative.as_posix()
                     attachment.original_name = attachment.original_name or filename
                     attachment.media_type = str(payload.get("contentType") or mimetypes.guess_type(filename)[0] or "application/octet-stream")
@@ -329,6 +354,38 @@ class ArchiveBuilder:
             reporter(f"Processing {stage.lower()}", percentage, item, completed, total)
         return completed
 
+    @staticmethod
+    def _write_verified_bytes(target: Path, data: bytes, *, attempts: int, description: str) -> None:
+        """Atomically persist bytes and verify the exact payload immediately."""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        retrying = Retrying(
+            retry=retry_if_exception_type((OSError, RuntimeError)),
+            stop=stop_after_attempt(max(1, attempts)),
+            wait=wait_exponential(multiplier=0.05, min=0.05, max=0.8),
+            reraise=True,
+        )
+        for attempt in retrying:
+            with attempt:
+                temporary: Path | None = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="wb",
+                        prefix=".cv-",
+                        suffix=".tmp",
+                        dir=target.parent,
+                        delete=False,
+                    ) as stream:
+                        temporary = Path(stream.name)
+                        stream.write(data)
+                    if temporary.read_bytes() != data:
+                        raise RuntimeError(f"Immediate byte verification failed for {description}.")
+                    temporary.replace(target)
+                    if target.read_bytes() != data:
+                        raise RuntimeError(f"Published byte verification failed for {description}.")
+                finally:
+                    if temporary is not None:
+                        temporary.unlink(missing_ok=True)
+
     def _build_documents(
         self,
         conversation: ConversationRecord,
@@ -341,14 +398,19 @@ class ArchiveBuilder:
         total_characters = sum(message.character_count for message in conversation.messages)
         total_words = sum(message.word_count for message in conversation.messages)
         total_tokens = sum(message.estimated_tokens for message in conversation.messages)
+        image_count = sum(len(message.image_references) for message in conversation.messages)
+        attachment_count = sum(len(message.attachment_references) for message in conversation.messages)
+        code_count = sum(len(message.code_references) for message in conversation.messages)
+        table_count = sum(len(message.table_references) for message in conversation.messages)
+        skipped_count = sum(message.capture_status == "skipped" for message in conversation.messages)
         statistics = StatisticsData(
             total_messages=len(conversation.messages),
             user_messages=user_messages,
             assistant_messages=assistant_messages,
-            images=sum(len(message.image_references) for message in conversation.messages),
-            attachments=sum(len(message.attachment_references) for message in conversation.messages),
-            code_blocks=sum(len(message.code_references) for message in conversation.messages),
-            tables=sum(len(message.table_references) for message in conversation.messages),
+            images=image_count,
+            attachments=attachment_count,
+            code_blocks=code_count,
+            tables=table_count,
             citations=sum(len(message.citation_references) for message in conversation.messages),
             total_characters=total_characters,
             total_words=total_words,
@@ -363,6 +425,10 @@ class ArchiveBuilder:
                     url=conversation.url,
                     platform_name=conversation.platform_name,
                     created_at=conversation.created_at,
+                    updated_at=conversation.updated_at,
+                    exported_at=conversation.exported_at,
+                    timezone=conversation.timezone,
+                    timestamp_source=conversation.timestamp_source,
                     messages=conversation.messages,
                 ),
             ),
@@ -375,6 +441,28 @@ class ArchiveBuilder:
                     platform_name=conversation.platform_name,
                     export_date=conversation.exported_at,
                     created_date=conversation.created_at,
+                    updated_date=conversation.updated_at,
+                    export_timestamp_utc=conversation.exported_at,
+                    export_timestamp_local=conversation.exported_at_local,
+                    timezone=conversation.timezone,
+                    timestamp_source=conversation.timestamp_source,
+                    duration_seconds=conversation.duration_seconds,
+                    export_uuid=conversation.export_id,
+                    contextvault_version=APPLICATION_VERSION,
+                    export_engine_version=APPLICATION_VERSION,
+                    schema_version=ARCHIVE_SCHEMA_VERSION,
+                    browser_name=conversation.browser_name,
+                    browser_version=conversation.browser_version,
+                    browser_profile=conversation.browser_profile,
+                    chatgpt_workspace=conversation.chatgpt_workspace,
+                    chatgpt_model=conversation.chatgpt_model,
+                    images=image_count,
+                    attachments=attachment_count,
+                    code_blocks=code_count,
+                    tables=table_count,
+                    estimated_size=conversation.estimated_size,
+                    skipped_messages=skipped_count,
+                    capture_warnings=conversation.capture_warnings,
                     language=conversation.language,
                     total_messages=len(conversation.messages),
                     user_messages=user_messages,
@@ -401,9 +489,14 @@ class ArchiveBuilder:
     def _write_markdown(root: Path, conversation: ConversationRecord, *, rich_markdown: bool) -> None:
         output = [f"# {conversation.title}", "", f"Source: {conversation.url}", ""]
         for message in conversation.messages:
+            timestamp = message.timestamp or message.captured_at
+            timestamp_line = timestamp.isoformat() if timestamp is not None else "unknown"
+            capture_suffix = " [DEGRADED]" if message.capture_status == "skipped" else ""
             output.extend(
                 [
-                    f"## {message.role.title()} — Message {message.sequence_number}",
+                    f"## {message.role.title()} — Message {message.sequence_number}{capture_suffix}",
+                    "",
+                    f"Timestamp: {timestamp_line}",
                     "",
                     message.markdown if rich_markdown else message.plain_text,
                     "",
@@ -437,6 +530,8 @@ class ArchiveBuilder:
         generated_at: datetime,
         hashes: list[FileHash],
         validation: Any | None,
+        *,
+        message_retry_count: int,
     ) -> ManifestDocument:
         return ManifestDocument(
             generated_at=generated_at,
@@ -447,6 +542,17 @@ class ArchiveBuilder:
                 export_date=conversation.exported_at,
                 conversation_id=conversation.conversation_id,
                 conversation_title=conversation.title,
+                conversation_started_at=conversation.created_at,
+                conversation_ended_at=conversation.updated_at,
+                exported_at=conversation.exported_at,
+                timezone=conversation.timezone,
+                timestamp_source=conversation.timestamp_source,
+                duration_seconds=conversation.duration_seconds,
+                total_messages=len(conversation.messages),
+                verified_messages=sum(message.capture_status == "verified" for message in conversation.messages),
+                skipped_messages=sum(message.capture_status == "skipped" for message in conversation.messages),
+                message_retry_count=message_retry_count,
+                incremental_verification=bool(conversation.readiness.get("incrementalVerification")),
                 file_mapping={
                     "conversation": "conversation.json",
                     "markdown": "conversation.md",

@@ -6,6 +6,7 @@ import threading
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -37,6 +38,41 @@ class ArchiveTests(unittest.TestCase):
         if url.endswith(".pdf"):
             return {"content": b"%PDF-1.4\n% ContextVault test\n", "contentType": "application/pdf", "suggestedFilename": "spec.pdf"}
         raise AssertionError(f"Unexpected resource: {url}")
+
+    def test_verified_byte_write_uses_short_same_directory_temporary_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / ("a" * 75) / ("b" * 75)
+            target = parent / "0002-b8f44655-aaf7-4087-b7af-114f5f37dc32-code-001.txt"
+            payload = b"line-one\r\nline-two\r\n"
+            legacy_temporary = target.parent / f".{target.name}.partial-{'0' * 32}"
+            self.assertLess(len(str(target)), 260)
+            self.assertGreaterEqual(len(str(legacy_temporary)), 260)
+
+            created_paths: list[Path] = []
+            real_named_temporary_file = tempfile.NamedTemporaryFile
+
+            def tracked_named_temporary_file(*args: object, **kwargs: object):
+                stream = real_named_temporary_file(*args, **kwargs)
+                created_paths.append(Path(stream.name))
+                return stream
+
+            with patch(
+                "src.core.archive_builder.tempfile.NamedTemporaryFile",
+                side_effect=tracked_named_temporary_file,
+            ):
+                ArchiveBuilder._write_verified_bytes(
+                    target,
+                    payload,
+                    attempts=1,
+                    description="long-path regression code reference",
+                )
+
+            self.assertEqual(target.read_bytes(), payload)
+            self.assertEqual(len(created_paths), 1)
+            self.assertEqual(created_paths[0].parent, target.parent)
+            self.assertLess(len(str(created_paths[0])), 260)
+            self.assertNotIn(target.name, created_paths[0].name)
+            self.assertFalse(created_paths[0].exists())
 
     def test_build_validate_and_rebuild_summary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

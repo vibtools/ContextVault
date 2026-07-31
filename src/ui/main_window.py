@@ -127,7 +127,9 @@ class MainWindow(ctk.CTk):
             "Archives": ArchivesPage(
                 self.workspace,
                 self._view_archive,
+                self._preview_archive,
                 self._open_archive_folder,
+                self._rename_archive,
                 self._delete_archive,
                 self._rebuild_summary,
                 self._validate_archive,
@@ -213,6 +215,13 @@ class MainWindow(ctk.CTk):
             dashboard = self.pages["Dashboard"]
             assert isinstance(dashboard, DashboardPage)
             dashboard.update_value("Archives", str(len(items)))
+        elif event.event_type == EventType.ARCHIVE_PREVIEW:
+            page = self.pages["Archives"]
+            assert isinstance(page, ArchivesPage)
+            page.set_preview(
+                str(payload.get("archiveName") or "Archive"),
+                dict(payload.get("manifest") or {}),
+            )
         elif event.event_type == EventType.HISTORY:
             items = list(payload.get("items", []))
             page = self.pages["Export History"]
@@ -368,9 +377,15 @@ class MainWindow(ctk.CTk):
         if not self.controller.open_archive(path):
             self._show_notification("Unable to open archive Markdown.", "error")
 
+    def _preview_archive(self, path: Path) -> None:
+        self._run_task(lambda: self.controller.preview_archive(path))
+
     def _open_archive_folder(self, path: Path) -> None:
         if not self.controller.open_archive_folder(path):
             self._show_notification("Unable to open archive folder.", "error")
+
+    def _rename_archive(self, path: Path, new_name: str) -> None:
+        self._run_task(lambda: self.controller.rename_archive(path, new_name))
 
     def _delete_archive(self, path: Path) -> None:
         self._run_task(lambda: self.controller.delete_archive(path))

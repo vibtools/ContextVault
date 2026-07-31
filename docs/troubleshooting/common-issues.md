@@ -1,5 +1,19 @@
 # Troubleshooting
 
+## Export fails with `Code reference ... file content does not match rawCode`
+
+Older validation read code files as text, allowing Windows universal-newline conversion to change `\r\n` into `\n` before comparison. The file bytes and `rawCode` could therefore be identical in meaning but falsely fail validation. The corrected validator compares exact UTF-8 bytes and the archive builder immediately reads back every code file. Install the current source files and export again; do not disable export verification to hide this error.
+
+## One message repeatedly fails during a large conversation
+
+Set **Message Retry Count** in Settings. ContextVault retries only the failed message/window, reloads the page once while preserving completed checkpoints, and resumes scanning. When retries are exhausted, it keeps an explicit degraded placeholder and continues instead of discarding the entire conversation. Review `metadata.json` → `captureWarnings`, `manifest.json` → `skippedMessages`, `conversation.json` → message `captureStatus`, and `logs/export.log`.
+
+If the application still aborts, the failure is not a skippable message-content mismatch. Check for browser termination, a full/inaccessible disk, export-folder permissions, malformed settings, or an inability to persist the degraded placeholder itself.
+
+## Export fails with “No conversation messages were found” while ChatGPT is still loading
+
+This error identifies the legacy count-only loader. That loader could treat four unchanged zero-message polls as completion when the current ChatGPT spinner did not match its old loading selector. Install the corrected browser readiness files, restart ContextVault, rescan, and export again. The corrected loader never reports readiness with zero messages; it waits for delayed React rendering, visible loading indicators, streaming completion, message stabilization, and virtualized-history scanning. A genuine timeout is reported as a readiness error and no partial archive is written.
+
 ## Launch Chrome opens a blank tab in normal Chrome
 
 This indicates that an older build attempted to automate Chrome's regular `User Data` directory. Chrome's process-singleton redirected `about:blank` to the already-running daily browser and terminated the attempted automation process. Replace `src/browser/browser_manager.py` with the corrected version. The corrected Launch Chrome path uses `data/chrome-user-data` and does not attach to the regular Chrome session.

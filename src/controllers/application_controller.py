@@ -199,6 +199,40 @@ class ApplicationController:
 
         return self.task_manager.submit("Refresh archives", work)
 
+    def preview_archive(self, archive_path: Path) -> str:
+        """Load a selected manifest for the in-application tree preview."""
+        def work(context: TaskContext) -> dict[str, Any]:
+            context.report_progress("Loading archive preview", 20.0, archive_path.name, force=True)
+            result = self.archive_repository.preview_manifest(
+                archive_path,
+                self._resolved_export_root(),
+            )
+            context.report_progress("Archive preview ready", 100.0, archive_path.name, force=True)
+            context.emit(EventType.ARCHIVE_PREVIEW, result)
+            return result
+
+        return self.task_manager.submit("Preview archive", work)
+
+    def rename_archive(self, archive_path: Path, new_name: str) -> str:
+        """Rename a selected archive through a managed background task."""
+        def work(context: TaskContext) -> dict[str, Any]:
+            context.report_progress("Renaming archive", 20.0, archive_path.name, force=True)
+            renamed_path = self.archive_repository.rename_archive(
+                archive_path,
+                self._resolved_export_root(),
+                new_name,
+            )
+            items = self.list_archives()
+            context.emit(EventType.ARCHIVES, {"items": items})
+            context.emit(
+                EventType.NOTIFICATION,
+                {"level": "success", "message": f"Archive renamed to '{renamed_path.name}'."},
+            )
+            context.report_progress("Archive renamed", 100.0, renamed_path.name, force=True)
+            return {"archivePath": str(renamed_path), "archiveName": renamed_path.name}
+
+        return self.task_manager.submit("Rename archive", work)
+
     def validate_archive(self, archive_path: Path) -> str:
         """Validate an archive off the UI thread."""
         def work(context: TaskContext) -> dict[str, Any]:

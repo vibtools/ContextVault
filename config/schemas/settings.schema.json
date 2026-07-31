@@ -19,7 +19,7 @@
                     "type": "boolean"
                 },
                 "attachments": {
-                    "default": true,
+                    "default": false,
                     "title": "Attachments",
                     "type": "boolean"
                 },
@@ -131,6 +131,13 @@
                     "title": "Workerthreads",
                     "type": "integer"
                 },
+                "messageRetryCount": {
+                    "default": 5,
+                    "maximum": 20,
+                    "minimum": 1,
+                    "title": "Messageretrycount",
+                    "type": "integer"
+                },
                 "delayMode": {
                     "default": "Normal",
                     "title": "Delaymode",
@@ -167,7 +174,5 @@
         }
     },
     "title": "ApplicationSettings",
-    "type": "object",
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://github.com/vibtools/ContextVault/raw/main/config/schemas/settings.schema.json"
+    "type": "object"
 }

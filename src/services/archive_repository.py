@@ -14,14 +14,14 @@ from src.models.archive import ConversationDocument, FileHash, ManifestDocument,
 from src.models.conversation import ConversationRecord
 from src.parsers.summary_builder import SummaryBuilder
 from src.utils.json_io import read_json, write_json
-from src.utils.security import ensure_within_root
+from src.utils.security import ensure_within_root, sanitize_filename
 from src.utils.system import open_path
 
 LOGGER = logging.getLogger(__name__)
 
 
 class ArchiveRepository:
-    """Manage generated archive folders without implementing an in-app viewer."""
+    """Discover and manage generated archive folders."""
 
     def __init__(self) -> None:
         self._validator = ArchiveValidator()
@@ -33,7 +33,16 @@ class ArchiveRepository:
         if not root.exists():
             return []
         output: list[dict[str, Any]] = []
-        for manifest_path in sorted(root.glob("*/manifest.json"), key=lambda path: path.stat().st_mtime, reverse=True):
+        manifest_paths = [
+            candidate / "manifest.json"
+            for candidate in root.iterdir()
+            if candidate.is_dir() and (candidate / "manifest.json").is_file()
+        ]
+        for manifest_path in sorted(
+            manifest_paths,
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        ):
             try:
                 payload = read_json(manifest_path)
                 data = payload.get("data", {})
@@ -49,11 +58,46 @@ class ArchiveRepository:
                         "exportDate": str(data.get("exportDate") or ""),
                         "status": str((data.get("validationStatus") or {}).get("status") or "unknown"),
                         "size": sum(path.stat().st_size for path in archive_root.rglob("*") if path.is_file()),
+                        "modifiedAt": datetime.fromtimestamp(
+                            archive_root.stat().st_mtime,
+                            tz=UTC,
+                        ).isoformat().replace("+00:00", "Z"),
                     }
                 )
             except (OSError, ValueError):
                 LOGGER.exception("Failed to inspect archive manifest: %s", manifest_path)
         return output
+
+    def preview_manifest(self, archive_path: Path, export_root: Path) -> dict[str, Any]:
+        """Read a selected archive manifest for the in-application tree preview."""
+        target = self._validated_archive_path(archive_path, export_root)
+        payload = read_json(target / "manifest.json")
+        return {
+            "archivePath": str(target),
+            "archiveName": target.name,
+            "manifest": payload,
+        }
+
+    def rename_archive(self, archive_path: Path, export_root: Path, new_name: str) -> Path:
+        """Rename one direct-child archive folder without changing archive contents."""
+        target = self._validated_archive_path(archive_path, export_root)
+        requested = new_name.strip()
+        if not requested:
+            raise ValueError("Archive name cannot be empty.")
+        safe_name = sanitize_filename(requested, max_length=120)
+        if safe_name != requested:
+            raise ValueError(
+                "Archive name contains unsupported Windows filename characters, reserved names, "
+                "or trailing spaces/dots."
+            )
+        destination = target.with_name(safe_name)
+        if destination == target:
+            return target
+        if destination.exists():
+            raise FileExistsError(f"An archive named '{safe_name}' already exists.")
+        target.rename(destination)
+        LOGGER.info("Archive renamed: %s -> %s", target, destination)
+        return destination
 
     def validate(self, archive_path: Path) -> dict[str, Any]:
         """Validate one archive and return a serializable result."""
@@ -70,12 +114,7 @@ class ArchiveRepository:
 
     def delete_archive(self, archive_path: Path, export_root: Path) -> None:
         """Delete one direct-child archive after strict path validation."""
-        root = export_root.expanduser().resolve()
-        target = ensure_within_root(archive_path, root)
-        if target.parent != root or not target.is_dir():
-            raise ValueError("Only direct archive folders inside the export root may be deleted.")
-        if not (target / "manifest.json").is_file():
-            raise ValueError("Refusing to delete a folder that is not a ContextVault archive.")
+        target = self._validated_archive_path(archive_path, export_root)
         shutil.rmtree(target)
         LOGGER.info("Archive deleted: %s", target)
 
@@ -145,3 +184,13 @@ class ArchiveRepository:
             encoding="utf-8",
             newline="\n",
         )
+
+    @staticmethod
+    def _validated_archive_path(archive_path: Path, export_root: Path) -> Path:
+        root = export_root.expanduser().resolve()
+        target = ensure_within_root(archive_path, root)
+        if target.parent != root or not target.is_dir():
+            raise ValueError("Only direct archive folders inside the export root may be managed.")
+        if not (target / "manifest.json").is_file():
+            raise ValueError("The selected folder is not a ContextVault archive.")
+        return target

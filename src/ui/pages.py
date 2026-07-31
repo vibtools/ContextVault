@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import tkinter as tk
+from collections import deque
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
 
 import customtkinter as ctk
 from pydantic import ValidationError
+
+from src.config.constants import APPLICATION_VERSION
 
 from src.models.conversation import ConversationListItem
 from src.models.settings import ApplicationSettings
@@ -195,13 +198,15 @@ class ConversationsPage(ctk.CTkFrame):
 
 
 class ArchivesPage(ctk.CTkFrame):
-    """Archive manager page."""
+    """Archive manager with selection-gated actions and manifest preview."""
 
     def __init__(
         self,
         master: Any,
         on_view: Callable[[Path], None],
+        on_preview: Callable[[Path], None],
         on_open_folder: Callable[[Path], None],
+        on_rename: Callable[[Path, str], None],
         on_delete: Callable[[Path], None],
         on_rebuild: Callable[[Path], None],
         on_validate: Callable[[Path], None],
@@ -209,53 +214,288 @@ class ArchivesPage(ctk.CTkFrame):
     ) -> None:
         super().__init__(master, fg_color="transparent")
         self.grid_rowconfigure(1, weight=1)
-        self.grid_columnconfigure(0, weight=1)
-        self._callbacks = (on_view, on_open_folder, on_delete, on_rebuild, on_validate)
+        self.grid_columnconfigure(0, weight=3)
+        self.grid_columnconfigure(1, weight=2)
+        self._on_view = on_view
+        self._on_preview = on_preview
+        self._on_open_folder = on_open_folder
+        self._on_rename = on_rename
+        self._on_delete = on_delete
+        self._on_rebuild = on_rebuild
+        self._on_validate = on_validate
+        self._on_refresh = on_refresh
         self._selected: dict[str, Any] | None = None
-        ctk.CTkLabel(self, text="Archive Manager", font=ctk.CTkFont(size=20, weight="bold")).grid(row=0, column=0, sticky="w", pady=(0, 10))
-        self.list_frame = ctk.CTkScrollableFrame(self, fg_color=theme.CARD, border_color=theme.BORDER, border_width=1)
-        self.list_frame.grid(row=1, column=0, sticky="nsew")
+        self._row_frames: dict[str, ctk.CTkFrame] = {}
+        self._action_buttons: dict[str, ctk.CTkButton] = {}
+        self._preview_generation = 0
+        self._preview_queue: deque[tuple[str, str, Any]] = deque()
+
+        ctk.CTkLabel(
+            self,
+            text="Archive Manager",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        left = ctk.CTkFrame(self, fg_color="transparent")
+        left.grid(row=1, column=0, padx=(0, 8), sticky="nsew")
+        left.grid_rowconfigure(0, weight=1)
+        left.grid_columnconfigure(0, weight=1)
+        self.list_frame = ctk.CTkScrollableFrame(
+            left,
+            fg_color=theme.CARD,
+            border_color=theme.BORDER,
+            border_width=1,
+        )
+        self.list_frame.grid(row=0, column=0, sticky="nsew")
         self.list_frame.grid_columnconfigure(0, weight=1)
-        bar = ctk.CTkFrame(self, fg_color="transparent")
-        bar.grid(row=2, column=0, sticky="ew", pady=(10, 0))
-        for index, (text, command) in enumerate(
-            [
-                ("View", lambda: self._act(0)),
-                ("Open Folder", lambda: self._act(1)),
-                ("Delete", lambda: self._act(2)),
-                ("Rebuild Summary", lambda: self._act(3)),
-                ("Validate", lambda: self._act(4)),
-                ("Refresh", on_refresh),
-            ]
-        ):
-            ctk.CTkButton(bar, text=text, command=command, width=120).grid(row=0, column=index, padx=4)
+
+        bar = ctk.CTkFrame(left, fg_color="transparent")
+        bar.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        for column in range(4):
+            bar.grid_columnconfigure(column, weight=1)
+        actions = [
+            ("View", self._view_selected),
+            ("Preview", self._preview_selected),
+            ("Open Folder", self._open_folder_selected),
+            ("Edit", self._rename_selected),
+            ("Delete", self._delete_selected),
+            ("Rebuild Summary", self._rebuild_selected),
+            ("Validate", self._validate_selected),
+        ]
+        for index, (text, command) in enumerate(actions):
+            button = ctk.CTkButton(bar, text=text, command=command, width=110, state="disabled")
+            button.grid(row=index // 4, column=index % 4, padx=4, pady=4, sticky="ew")
+            self._action_buttons[text] = button
+        ctk.CTkButton(bar, text="Refresh", command=self._refresh, width=110).grid(
+            row=1,
+            column=3,
+            padx=4,
+            pady=4,
+            sticky="ew",
+        )
+
+        preview = ctk.CTkFrame(
+            self,
+            fg_color=theme.CARD,
+            border_color=theme.BORDER,
+            border_width=1,
+        )
+        preview.grid(row=1, column=1, padx=(8, 0), sticky="nsew")
+        preview.grid_rowconfigure(1, weight=1)
+        preview.grid_columnconfigure(0, weight=1)
+        self.preview_title = tk.StringVar(value="Manifest Preview")
+        ctk.CTkLabel(
+            preview,
+            textvariable=self.preview_title,
+            font=ctk.CTkFont(size=17, weight="bold"),
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=2, padx=14, pady=(14, 8), sticky="ew")
+
+        style = ttk.Style(self)
+        style.configure(
+            "ContextVault.Treeview",
+            background=theme.CARD,
+            fieldbackground=theme.CARD,
+            foreground=theme.TEXT,
+            bordercolor=theme.BORDER,
+            rowheight=24,
+        )
+        style.configure(
+            "ContextVault.Treeview.Heading",
+            background=theme.BORDER,
+            foreground=theme.TEXT,
+        )
+        style.map(
+            "ContextVault.Treeview",
+            background=[("selected", theme.PRIMARY)],
+            foreground=[("selected", theme.TEXT)],
+        )
+        self.preview_tree = ttk.Treeview(
+            preview,
+            columns=("value",),
+            show="tree headings",
+            style="ContextVault.Treeview",
+        )
+        self.preview_tree.heading("#0", text="Key")
+        self.preview_tree.heading("value", text="Value")
+        self.preview_tree.column("#0", width=220, stretch=True)
+        self.preview_tree.column("value", width=260, stretch=True)
+        vertical = ttk.Scrollbar(preview, orient="vertical", command=self.preview_tree.yview)
+        horizontal = ttk.Scrollbar(preview, orient="horizontal", command=self.preview_tree.xview)
+        self.preview_tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        self.preview_tree.grid(row=1, column=0, sticky="nsew", padx=(12, 0), pady=(0, 0))
+        vertical.grid(row=1, column=1, sticky="ns", padx=(0, 12), pady=(0, 0))
+        horizontal.grid(row=2, column=0, sticky="ew", padx=(12, 0), pady=(0, 12))
+        self._show_empty_preview("Select an archive and click Preview.")
 
     def set_items(self, items: list[dict[str, Any]]) -> None:
+        """Replace the filesystem-backed list and clear stale selection state."""
+        self._selected = None
+        self._set_actions_enabled(False)
+        self._row_frames.clear()
+        self._show_empty_preview("Select an archive and click Preview.")
         for child in self.list_frame.winfo_children():
             child.destroy()
+        if not items:
+            ctk.CTkLabel(
+                self.list_frame,
+                text="No archive folders were found.",
+                text_color=theme.MUTED,
+            ).grid(row=0, column=0, padx=16, pady=20, sticky="w")
+            return
         for index, item in enumerate(items):
             row = ctk.CTkFrame(self.list_frame, fg_color="transparent")
             row.grid(row=index, column=0, padx=6, pady=4, sticky="ew")
             row.grid_columnconfigure(0, weight=1)
-            title = ctk.CTkLabel(row, text=str(item.get("title") or item.get("name")), anchor="w")
-            title.grid(row=0, column=0, padx=8, pady=8, sticky="ew")
-            ctk.CTkLabel(row, text=str(item.get("status") or "unknown"), text_color=theme.MUTED).grid(row=0, column=1, padx=8)
-            ctk.CTkLabel(row, text=_format_size(int(item.get("size") or 0)), text_color=theme.MUTED).grid(row=0, column=2, padx=8)
-            for widget in (row, title):
+            archive_name = str(item.get("name") or Path(str(item.get("path") or "")).name)
+            conversation_title = str(item.get("title") or archive_name)
+            name_label = ctk.CTkLabel(
+                row,
+                text=archive_name,
+                anchor="w",
+                font=ctk.CTkFont(weight="bold"),
+            )
+            name_label.grid(row=0, column=0, padx=8, pady=(7, 0), sticky="ew")
+            title_label = ctk.CTkLabel(
+                row,
+                text=conversation_title,
+                anchor="w",
+                text_color=theme.MUTED,
+            )
+            title_label.grid(row=1, column=0, padx=8, pady=(0, 7), sticky="ew")
+            status = ctk.CTkLabel(
+                row,
+                text=str(item.get("status") or "unknown"),
+                text_color=theme.MUTED,
+            )
+            status.grid(row=0, column=1, rowspan=2, padx=8)
+            size = ctk.CTkLabel(
+                row,
+                text=_format_size(int(item.get("size") or 0)),
+                text_color=theme.MUTED,
+            )
+            size.grid(row=0, column=2, rowspan=2, padx=8)
+            path_key = str(item.get("path") or "")
+            self._row_frames[path_key] = row
+            for widget in (row, name_label, title_label, status, size):
                 widget.bind("<Button-1>", lambda _event, selected=item: self._select(selected))
-                widget.bind("<Double-Button-1>", lambda _event, selected=item: self._callbacks[0](Path(str(selected["path"]))))
+                widget.bind("<Double-Button-1>", lambda _event, selected=item: self._double_click(selected))
+
+    def set_preview(self, archive_name: str, manifest: dict[str, Any]) -> None:
+        """Render a manifest payload incrementally to keep the UI responsive."""
+        self._preview_generation += 1
+        generation = self._preview_generation
+        self.preview_title.set(f"Manifest Preview — {archive_name}")
+        self._clear_preview_tree()
+        root_id = self.preview_tree.insert("", "end", text="manifest.json", values=("",), open=True)
+        self._preview_queue = deque((root_id, str(key), value) for key, value in manifest.items())
+        self.after_idle(lambda: self._drain_preview_queue(generation))
+
+    def _drain_preview_queue(self, generation: int) -> None:
+        if generation != self._preview_generation:
+            return
+        processed = 0
+        while self._preview_queue and processed < 200:
+            parent, key, value = self._preview_queue.popleft()
+            processed += 1
+            if isinstance(value, dict):
+                item_id = self.preview_tree.insert(parent, "end", text=key, values=("object",))
+                self._preview_queue.extend((item_id, str(child_key), child) for child_key, child in value.items())
+            elif isinstance(value, list):
+                item_id = self.preview_tree.insert(parent, "end", text=key, values=(f"list[{len(value)}]",))
+                self._preview_queue.extend((item_id, f"[{index}]", child) for index, child in enumerate(value))
+            else:
+                self.preview_tree.insert(parent, "end", text=key, values=(_preview_scalar(value),))
+        if self._preview_queue:
+            self.after(1, lambda: self._drain_preview_queue(generation))
+
+    def _show_empty_preview(self, message: str) -> None:
+        self._preview_generation += 1
+        self._preview_queue.clear()
+        self.preview_title.set("Manifest Preview")
+        self._clear_preview_tree()
+        self.preview_tree.insert("", "end", text=message, values=("",))
+
+    def _clear_preview_tree(self) -> None:
+        children = self.preview_tree.get_children()
+        if children:
+            self.preview_tree.delete(*children)
 
     def _select(self, item: dict[str, Any]) -> None:
         self._selected = item
+        selected_path = str(item.get("path") or "")
+        for path, row in self._row_frames.items():
+            row.configure(fg_color=theme.BORDER if path == selected_path else "transparent")
+        self._set_actions_enabled(True)
 
-    def _act(self, index: int) -> None:
+    def _double_click(self, item: dict[str, Any]) -> None:
+        self._select(item)
+        self._on_view(Path(str(item["path"])))
+
+    def _selected_path(self) -> Path | None:
         if self._selected is None:
             messagebox.showwarning("Archive Manager", "Select an archive first.", parent=self)
+            return None
+        return Path(str(self._selected["path"]))
+
+    def _view_selected(self) -> None:
+        path = self._selected_path()
+        if path is not None:
+            self._on_view(path)
+
+    def _preview_selected(self) -> None:
+        path = self._selected_path()
+        if path is not None:
+            self._on_preview(path)
+
+    def _open_folder_selected(self) -> None:
+        path = self._selected_path()
+        if path is not None:
+            self._on_open_folder(path)
+
+    def _rename_selected(self) -> None:
+        path = self._selected_path()
+        if path is None:
             return
-        path = Path(str(self._selected["path"]))
-        if index == 2 and not messagebox.askyesno("Delete Archive", f"Delete '{self._selected.get('title', path.name)}'?", parent=self):
+        current_name = str(self._selected.get("name") or path.name) if self._selected else path.name
+        new_name = simpledialog.askstring(
+            "Rename Archive",
+            "Archive folder name:",
+            initialvalue=current_name,
+            parent=self,
+        )
+        if new_name is None or new_name.strip() == current_name:
             return
-        self._callbacks[index](path)
+        self._on_rename(path, new_name.strip())
+
+    def _delete_selected(self) -> None:
+        path = self._selected_path()
+        if path is None:
+            return
+        display_name = str(self._selected.get("name") or path.name) if self._selected else path.name
+        if messagebox.askyesno("Delete Archive", f"Delete '{display_name}'?", parent=self):
+            self._on_delete(path)
+
+    def _rebuild_selected(self) -> None:
+        path = self._selected_path()
+        if path is not None:
+            self._on_rebuild(path)
+
+    def _validate_selected(self) -> None:
+        path = self._selected_path()
+        if path is not None:
+            self._on_validate(path)
+
+    def _refresh(self) -> None:
+        self._selected = None
+        self._set_actions_enabled(False)
+        self._show_empty_preview("Refreshing archive folders…")
+        self._on_refresh()
+
+    def _set_actions_enabled(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        for button in self._action_buttons.values():
+            button.configure(state=state)
 
 
 class HistoryPage(ctk.CTkFrame):
@@ -334,7 +574,7 @@ class SettingsPage(ctk.CTkFrame):
             ("images", "Images", settings.assets.images, True),
             ("code", "Code", settings.assets.code, True),
             ("tables", "Tables", settings.assets.tables, True),
-            ("attachments", "Attachments", settings.assets.attachments, True),
+            ("attachments", "Download Attachments", settings.assets.attachments, True),
             ("markdown", "Markdown", True, False),
             ("json", "JSON", True, False),
             ("summary", "Summary", settings.assets.summary, True),
@@ -347,6 +587,8 @@ class SettingsPage(ctk.CTkFrame):
         row = self._section(content, row, "Performance")
         self._variables["worker_threads"] = tk.StringVar(value=str(settings.performance.worker_threads))
         self._option(content, row, "Worker Threads", self._variables["worker_threads"], ["1", "2", "4", "8"]); row += 1
+        self._variables["message_retry_count"] = tk.StringVar(value=str(settings.performance.message_retry_count))
+        self._entry(content, row, "Message Retry Count", self._variables["message_retry_count"]); row += 1
         self._variables["delay_mode"] = tk.StringVar(value=settings.performance.delay_mode)
         self._option(content, row, "Delay", self._variables["delay_mode"], ["Auto", "Fast", "Normal", "Safe"]); row += 1
         self._variables["memory_mode"] = tk.StringVar(value=settings.performance.memory_mode)
@@ -376,6 +618,7 @@ class SettingsPage(ctk.CTkFrame):
                     "assets": {key: self._variables[key].get() for key in ("images", "code", "tables", "attachments", "markdown", "json", "summary", "statistics", "search_index")},
                     "performance": {
                         "workerThreads": int(str(self._variables["worker_threads"].get())),
+                        "messageRetryCount": int(str(self._variables["message_retry_count"].get())),
                         "delayMode": self._variables["delay_mode"].get(),
                         "memoryMode": self._variables["memory_mode"].get(),
                     },
@@ -471,7 +714,7 @@ class AboutPage(ctk.CTkFrame):
         super().__init__(master, fg_color=theme.CARD, border_color=theme.BORDER, border_width=1)
         ctk.CTkLabel(self, text="ContextVault", font=ctk.CTkFont(size=30, weight="bold")).pack(pady=(80, 8))
         ctk.CTkLabel(self, text="Preserve AI Context. Forever.", text_color=theme.MUTED, font=ctk.CTkFont(size=16)).pack(pady=4)
-        ctk.CTkLabel(self, text="Version 1.0.0\nOpen-source project by Vib Tools\nhttps://vib.tools/", justify="center").pack(pady=20)
+        ctk.CTkLabel(self, text=f"Version {APPLICATION_VERSION}\nOpen-source project by Vib Tools\nhttps://vib.tools/", justify="center").pack(pady=20)
 
 
 def _select_folder(variable: tk.Variable) -> None:
@@ -495,6 +738,15 @@ def _open_profile_folder(root_variable: tk.Variable, profile_variable: tk.Variab
 def _reset_profile(root_variable: tk.Variable, profile_variable: tk.Variable) -> None:
     root_variable.set("")
     profile_variable.set("Default")
+
+
+def _preview_scalar(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    text = str(value)
+    return text if len(text) <= 500 else f"{text[:497]}…"
 
 
 def _format_size(value: int | None) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 APPLICATION_NAME = "ContextVault"
-APPLICATION_VERSION = "1.0.0"
+APPLICATION_VERSION = "0.2.0"
 ARCHIVE_FORMAT = "contextvault"
 ARCHIVE_SCHEMA_VERSION = "1.0"
 DEFAULT_WINDOW_SIZE = "1180x760"
@@ -19,12 +19,36 @@ DEFAULT_CDP_ENDPOINT = "http://127.0.0.1:9222"
 DEFAULT_CHAT_URL = "https://chatgpt.com/"
 SUPPORTED_BROWSER = "Chrome"
 SUPPORTED_ASSET_EXTENSIONS = {
+    ".7z",
+    ".bmp",
     ".pdf",
     ".zip",
     ".csv",
+    ".doc",
     ".txt",
     ".docx",
+    ".gif",
+    ".html",
+    ".jpeg",
+    ".jpg",
+    ".json",
+    ".md",
+    ".ods",
+    ".odt",
+    ".png",
+    ".ppt",
+    ".pptx",
+    ".py",
+    ".rar",
+    ".rtf",
+    ".tar",
+    ".tsv",
+    ".webp",
+    ".xls",
     ".xlsx",
+    ".xml",
+    ".yaml",
+    ".yml",
 }
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 REQUIRED_ARCHIVE_FILES = (

@@ -29,6 +29,7 @@ class EventType(StrEnum):
     NOTIFICATION = "notification"
     CONVERSATIONS = "conversations"
     ARCHIVES = "archives"
+    ARCHIVE_PREVIEW = "archivePreview"
     HISTORY = "history"
     BROWSER = "browser"
 

@@ -20,8 +20,11 @@ class ServiceTests(unittest.TestCase):
             service = ConfigService(path)
             settings = service.load()
             settings.performance.worker_threads = 2
+            settings.performance.message_retry_count = 9
             service.save(settings)
-            self.assertEqual(service.load().performance.worker_threads, 2)
+            reloaded = service.load()
+            self.assertEqual(reloaded.performance.worker_threads, 2)
+            self.assertEqual(reloaded.performance.message_retry_count, 9)
             path.write_text("[]", encoding="utf-8")
             recovered = service.load()
             self.assertEqual(recovered, ApplicationSettings())

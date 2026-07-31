@@ -5,7 +5,7 @@
 - `src/app/`: bootstrap and application lifecycle.
 - `src/ui/`: frozen CustomTkinter presentation, navigation, shortcuts, notifications, drag/drop, logs, and status UI.
 - `src/controllers/`: UI-safe orchestration and public application commands.
-- `src/core/`: managed tasks, export pipeline, archive builder/validator, and RAG generation.
+- `src/core/`: managed tasks, export pipeline, per-message checkpoint persistence, archive builder/validator, and RAG generation.
 - `src/browser/`: selector definitions, Playwright browser manager, dedicated browser worker, and asyncio ownership.
 - `src/parsers/`: lossless conversation parsing plus deterministic summary/search-index generation.
 - `src/models/`: validated domain and external JSON contracts.
@@ -20,10 +20,12 @@
 4. `BrowserSessionWorker` reserves one executor lane and owns an asyncio event loop plus `BrowserManager`.
 5. UI commands submit controller tasks and return immediately.
 6. Browser commands are serialized through the browser worker.
-7. Fully loaded HTML is parsed into Pydantic models.
-8. `ArchiveBuilder` writes assets and documents into an isolated staging directory.
-9. `ArchiveValidator` verifies the archive; publication uses atomic rename.
-10. Events, progress, logs, history, and archive updates return to the UI through thread-safe queues.
+7. Each stable virtualized DOM window is passed as plain data to `MessageCheckpointStore`; messages are parsed, atomically checkpointed as JSON, code bytes are read-back verified, and the browser scrolls only after commit.
+8. A failed message is retried in place; at most one recovery reload per failed key preserves completed checkpoints and resumes uncommitted keys. Exhausted content becomes an explicit degraded placeholder while sequence order is retained.
+9. `ConversationParser.build_record` finalizes ordered checkpoints and timestamp provenance into Pydantic models.
+10. `ArchiveBuilder` writes exact asset bytes and documents into an isolated staging directory with immediate read-back verification.
+11. `ArchiveValidator` verifies exact code bytes, model/document consistency, references, counts, hashes, and degraded warnings; publication uses atomic rename.
+12. Events, progress, logs, history, and archive updates return to the UI through thread-safe queues.
 
 ## Data and trust boundaries
 
@@ -31,7 +33,9 @@
 - Filenames are sanitized and archive references reject absolute paths, traversal, and backslashes.
 - Resource bytes are validated where format-specific validation exists, including image verification.
 - Settings and archive documents are validated with Pydantic.
-- JSON writes are deterministic and atomic.
+- JSON writes are deterministic and atomic. Per-message checkpoints are temporary, process-local, and removed after export completion/cancellation/failure.
+- Code validation is byte-exact and never normalizes line endings.
+- Original timestamps are used only when supported by source evidence; capture and export timestamps are separately labeled.
 - Archive deletion is restricted to direct child folders containing a ContextVault manifest.
 
 ## Extension points within the frozen architecture

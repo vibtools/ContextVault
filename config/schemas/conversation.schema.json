@@ -151,6 +151,42 @@
                     "default": null,
                     "title": "Createdat"
                 },
+                "updatedAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Updatedat"
+                },
+                "exportedAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Exportedat"
+                },
+                "timezone": {
+                    "default": "unknown",
+                    "title": "Timezone",
+                    "type": "string"
+                },
+                "timestampSource": {
+                    "default": "unknown",
+                    "title": "Timestampsource",
+                    "type": "string"
+                },
                 "messages": {
                     "items": {
                         "$ref": "#/$defs/ConversationMessage"
@@ -279,6 +315,67 @@
                     ],
                     "default": null,
                     "title": "Timestamp"
+                },
+                "capturedAt": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Capturedat"
+                },
+                "timestampSource": {
+                    "default": "unknown",
+                    "enum": [
+                        "message_timestamp",
+                        "page_state",
+                        "dom_inferred",
+                        "unknown"
+                    ],
+                    "title": "Timestampsource",
+                    "type": "string"
+                },
+                "captureStatus": {
+                    "default": "verified",
+                    "enum": [
+                        "verified",
+                        "skipped"
+                    ],
+                    "title": "Capturestatus",
+                    "type": "string"
+                },
+                "captureAttempts": {
+                    "default": 1,
+                    "minimum": 1,
+                    "title": "Captureattempts",
+                    "type": "integer"
+                },
+                "captureError": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Captureerror"
+                },
+                "sourceKey": {
+                    "default": "",
+                    "title": "Sourcekey",
+                    "type": "string"
+                },
+                "sourceSignature": {
+                    "default": "",
+                    "title": "Sourcesignature",
+                    "type": "string"
                 },
                 "characterCount": {
                     "default": 0,

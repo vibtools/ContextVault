@@ -10,6 +10,7 @@
 | Dedicated Playwright lane | `src/browser/session_worker.py` | PASS |
 | Browser integration | `src/browser/browser_manager.py` | PASS |
 | Parsing and models | `src/parsers/`, `src/models/` | PASS |
+| Incremental message checkpoints | `src/core/message_checkpoint.py`, browser callback boundary | PASS |
 | Archive/RAG services | `src/core/archive_builder.py`, `rag_builder.py` | PASS |
 | Validation and management | `src/core/archive_validator.py`, `src/services/archive_repository.py` | PASS |
 | Build and release source configuration | `nuitka.toml`, `scripts/build/`, `.github/workflows/` | PASS |
@@ -21,6 +22,9 @@
 - UI thread performs presentation and event polling only.
 - Playwright objects never cross the browser worker boundary.
 - Browser exports are serialized.
+- A virtualized DOM window is not scrolled away until message JSON and exact code bytes pass immediate checkpoint verification.
+- Failed message keys use bounded retry, at most one reload/resume cycle per failed key, then explicit degraded preservation; infrastructure failures remain fatal.
+- Original, capture, and export timestamps remain distinct and source provenance is recorded.
 - Output is written atomically through a staging directory.
 - External paths and archive-relative references are validated.
 - Existing frozen dependencies and public architecture are preserved.

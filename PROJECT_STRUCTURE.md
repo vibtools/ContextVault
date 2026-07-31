@@ -62,7 +62,7 @@ The repository uses the frozen responsibility-based architecture below. Folder a
 
 - `src/ui/` contains presentation only and never imports browser implementation modules.
 - `src/controllers/` is the public UI workflow boundary.
-- `src/core/` owns managed tasks and archive/export business logic.
+- `src/core/` owns managed tasks, incremental message checkpoints, and archive/export business logic.
 - `src/browser/` owns all Playwright and Chrome interaction.
 - `src/parsers/` transforms fully loaded HTML into validated domain records.
 - `src/models/` defines internal and external contracts.

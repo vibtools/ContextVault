@@ -16,7 +16,7 @@ class AssetSettings(ContextVaultModel):
     images: bool = True
     code: bool = True
     tables: bool = True
-    attachments: bool = True
+    attachments: bool = False
     markdown: bool = True
     json_output: bool = Field(default=True, alias="json")
     summary: bool = True
@@ -55,7 +55,7 @@ class BrowserSettings(ContextVaultModel):
     @classmethod
     def validate_browser(cls, value: str) -> str:
         if value != SUPPORTED_BROWSER:
-            raise ValueError("ContextVault v1.0 supports Google Chrome only.")
+            raise ValueError("ContextVault supports Google Chrome only.")
         return value
 
     @field_validator("profile_directory")
@@ -79,6 +79,7 @@ class PerformanceSettings(ContextVaultModel):
     """Worker and extraction performance controls."""
 
     worker_threads: int = Field(default=4, ge=1, le=8)
+    message_retry_count: int = Field(default=5, ge=1, le=20)
     delay_mode: str = "Normal"
     memory_mode: str = "Balanced"
 

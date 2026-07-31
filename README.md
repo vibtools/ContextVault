@@ -12,7 +12,9 @@ Version **1.0.0** follows the frozen project specifications in `project/`: Custo
 
 - Launch official Google Chrome Stable with a ContextVault-owned persistent profile, use an explicitly configured non-standard profile root, or connect over CDP.
 - Scan ChatGPT conversation links and progressively load a selected conversation.
-- Preserve ordered messages, roles, timestamps, HTML, Markdown, plain text, code, images, attachments, tables, and citations.
+- Checkpoint every settled virtualized message window before scrolling: extract message content, atomically save message JSON, save exact code bytes, verify both immediately, and only then continue.
+- Retry a failed message in place, perform at most one recovery reload per failed message key while preserving completed checkpoints, and preserve an exhausted message as an explicit degraded placeholder instead of discarding the whole conversation.
+- Preserve ordered messages, roles, timestamp provenance, capture time, HTML, Markdown, plain text, code, images, attachments, tables, and citations.
 - Generate mandatory metadata, summaries, search indexes, statistics, logs, hashes, and RAG documents.
 - Validate structure, schemas, asset references, message sequencing, file size, and SHA-256 integrity.
 - Manage archives, export history, settings, logs, cancellation, and current-session resume from one dark-mode CustomTkinter window.
@@ -38,7 +40,7 @@ ArchiveBuilder / RagBuilder / ArchiveValidator
 Portable ContextVault archive
 ```
 
-Browser exports are serialized so Playwright objects never leave their owning worker thread. The UI receives typed queue events and never performs browser, parsing, archive, or filesystem-heavy work directly.
+Browser exports are serialized so Playwright objects never leave their owning worker thread. The UI receives typed queue events and never performs browser, parsing, archive, or filesystem-heavy work directly. During deep scanning, verified messages are retained in a temporary checkpoint store under `data/checkpoints/`; the store is removed after successful publication, cancellation, or failure. The frozen final archive layout is unchanged.
 
 ## Requirements
 
@@ -64,7 +66,7 @@ python src/app.py
 
 ## Basic workflow
 
-1. Open **Settings** and configure the profile name, CDP endpoint, export directory, and asset options. Leave **Browser Profile Root** blank to use ContextVault's persistent isolated profile.
+1. Open **Settings** and configure the profile name, CDP endpoint, export directory, asset options, and **Message Retry Count**. Leave **Browser Profile Root** blank to use ContextVault's persistent isolated profile.
 2. Select **Launch Chrome**. Use **Connect** only for a Chrome instance that you intentionally started with remote debugging and a non-standard user-data directory.
 3. Log in manually inside the ContextVault Chrome window and open ChatGPT. The session persists for later launches.
 4. Select **Scan**, choose conversations, and export.
@@ -98,7 +100,7 @@ archive-name/
     └── validation.log
 ```
 
-All JSON output is UTF-8 without BOM, four-space indented, camelCase, root-object based, and versioned. RAG chunks preserve message boundaries.
+All JSON output is UTF-8 without BOM, four-space indented, camelCase, root-object based, and versioned. Every generated JSON document has `generatedAt`; every message records `capturedAt`, sequence order, capture status, attempts, and timestamp provenance. Real source timestamps are retained when available; unavailable source times remain `null`/`unknown` rather than being invented. RAG chunks preserve message boundaries.
 
 ## Testing and audit commands
 
@@ -108,7 +110,7 @@ python scripts/test/check_environment.py
 python scripts/test/run_tests.py
 ```
 
-The 39-test automated suite covers parsing, repeated-message preservation, opaque attachments, archive generation/compression, deep consistency validation, rollback, atomic writes, cancellation, browser-worker lifecycle, settings/history, path security, repository configuration, AST validity, and architectural import boundaries.
+The 55-test automated suite covers incremental message checkpoints, exact CRLF code-byte validation, configured retry/reload/degraded-message recovery, timestamped manifests, delayed DOM readiness, parsing, repeated-message preservation, opaque attachments, archive generation/compression, deep consistency validation, rollback, atomic writes, cancellation, browser-worker lifecycle, settings/history, path security, repository configuration, AST validity, and architectural import boundaries.
 
 ## Windows build and release
 

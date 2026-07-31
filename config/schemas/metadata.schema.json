@@ -64,6 +64,169 @@
                 "estimatedTokenCount": {
                     "title": "Estimatedtokencount",
                     "type": "integer"
+                },
+                "updatedDate": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Updateddate"
+                },
+                "exportTimestampUtc": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Exporttimestamputc"
+                },
+                "exportTimestampLocal": {
+                    "anyOf": [
+                        {
+                            "format": "date-time",
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Exporttimestamplocal"
+                },
+                "timezone": {
+                    "default": "unknown",
+                    "title": "Timezone",
+                    "type": "string"
+                },
+                "timestampSource": {
+                    "default": "unknown",
+                    "title": "Timestampsource",
+                    "type": "string"
+                },
+                "durationSeconds": {
+                    "anyOf": [
+                        {
+                            "type": "integer"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Durationseconds"
+                },
+                "exportUuid": {
+                    "default": "",
+                    "title": "Exportuuid",
+                    "type": "string"
+                },
+                "contextvaultVersion": {
+                    "default": "1.0.0",
+                    "title": "Contextvaultversion",
+                    "type": "string"
+                },
+                "exportEngineVersion": {
+                    "default": "1.0.0",
+                    "title": "Exportengineversion",
+                    "type": "string"
+                },
+                "schemaVersion": {
+                    "default": "1.0",
+                    "title": "Schemaversion",
+                    "type": "string"
+                },
+                "browserName": {
+                    "default": "unavailable",
+                    "title": "Browsername",
+                    "type": "string"
+                },
+                "browserVersion": {
+                    "default": "unavailable",
+                    "title": "Browserversion",
+                    "type": "string"
+                },
+                "browserProfile": {
+                    "default": "unavailable",
+                    "title": "Browserprofile",
+                    "type": "string"
+                },
+                "chatgptWorkspace": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Chatgptworkspace"
+                },
+                "chatgptModel": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "title": "Chatgptmodel"
+                },
+                "images": {
+                    "default": 0,
+                    "minimum": 0,
+                    "title": "Images",
+                    "type": "integer"
+                },
+                "attachments": {
+                    "default": 0,
+                    "minimum": 0,
+                    "title": "Attachments",
+                    "type": "integer"
+                },
+                "codeBlocks": {
+                    "default": 0,
+                    "minimum": 0,
+                    "title": "Codeblocks",
+                    "type": "integer"
+                },
+                "tables": {
+                    "default": 0,
+                    "minimum": 0,
+                    "title": "Tables",
+                    "type": "integer"
+                },
+                "estimatedSize": {
+                    "default": 0,
+                    "minimum": 0,
+                    "title": "Estimatedsize",
+                    "type": "integer"
+                },
+                "skippedMessages": {
+                    "default": 0,
+                    "minimum": 0,
+                    "title": "Skippedmessages",
+                    "type": "integer"
+                },
+                "captureWarnings": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "title": "Capturewarnings",
+                    "type": "array"
                 }
             },
             "required": [
