@@ -51,5 +51,5 @@ nofollow_import_to = [
     "unittest",
 ]
 noinclude_default_mode = "error"
-assume_yes_for_downloads = false
+assume_yes_for_downloads = true
 msvc = "latest"
