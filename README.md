@@ -9,11 +9,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)](docs/getting-started/installation.md)
 
-**ContextVault v0.2.0** is a Windows desktop application that saves fully loaded ChatGPT conversations as portable, integrity-checked, RAG-ready archives.
+**ContextVault v0.2.1** is a Windows desktop application that saves fully loaded ChatGPT conversations as portable, integrity-checked, RAG-ready archives.
 
 It is designed for people who want a dependable local copy of important AI conversations without manually copying messages one by one. You do not need to be a developer to use the portable Windows release.
 
-> **Application version:** 0.2.0
+> **Application version:** 0.2.1
 > **Archive schema version:** 1.0
 > These versions describe different things. The application can receive bug fixes without changing the archive format.
 
@@ -34,22 +34,21 @@ A completed archive can include:
 
 ContextVault does **not** ask for your ChatGPT password. Login happens directly inside the Chrome window.
 
-## What is improved in v0.2.0
+## What is improved in v0.2.1
 
-Version 0.2.0 is an export reliability and stability update. It addresses the main failure modes found during large real-world exports:
+Version 0.2.1 is a cumulative export-reliability hotfix. It preserves archive schema `1.0` while correcting the live failure modes discovered during long-conversation validation:
 
-- large conversations are no longer limited by one fixed 900-second total deadline while meaningful progress continues;
-- every stable message window is checkpointed and verified before the browser scrolls away;
-- a stalled browser image or spinner receives a bounded grace period instead of blocking scrolling forever;
-- decorative favicons are no longer treated as conversation images;
-- image download failures no longer trigger attachment-control scanning;
-- duplicate export requests cannot interleave browser workflows;
-- the sidebar conversation title is used as the canonical archive title;
-- archive publication collisions are resolved atomically;
-- long Windows temporary paths use short same-directory temporary names;
-- expected user cancellation is logged as cancellation rather than a false browser failure.
+- virtualized scans recover from permanent DOM mutation churn, persistent non-semantic loaders, and no-op scroll attempts;
+- stalled-image handling remains bounded without regressing the established image-scroll fast path;
+- active nested scroll containers are selected instead of unrelated document fallbacks;
+- transient Playwright observation failures retry in place without discarding accumulated checkpoints;
+- mixed ChatGPT message-container families and nested message identity/role attributes are preserved;
+- checkpoint storage failures remain fatal instead of being misclassified as degraded messages;
+- failed browser workflows release their exclusive lease before terminal state publication, so immediate retry is safe;
+- packaged runtime-root and shipped-defaults validation is stricter;
+- Windows release builds use a deterministic low-memory Nuitka policy (`LTO` disabled, one compiler job) to prevent MSVC `C1002` heap exhaustion.
 
-See [v0.2.0 release notes](docs/release-notes/0.2.0.md) for the complete change list.
+See [v0.2.1 release notes](docs/release-notes/0.2.1.md) for the complete change list.
 
 ## Requirements
 
@@ -249,7 +248,7 @@ data\export_history.json
 exports\
 ```
 
-Then extract v0.2.0 into a new folder and copy back only the personal runtime data you need. See [Upgrading](docs/getting-started/upgrading.md).
+Then extract v0.2.1 into a new folder and copy back only the personal runtime data you need. See [Upgrading](docs/getting-started/upgrading.md).
 
 ## Troubleshooting
 

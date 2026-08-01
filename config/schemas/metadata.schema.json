@@ -132,12 +132,12 @@
                     "type": "string"
                 },
                 "contextvaultVersion": {
-                    "default": "0.2.0",
+                    "default": "0.2.1",
                     "title": "Contextvaultversion",
                     "type": "string"
                 },
                 "exportEngineVersion": {
-                    "default": "0.2.0",
+                    "default": "0.2.1",
                     "title": "Exportengineversion",
                     "type": "string"
                 },
@@ -270,7 +270,7 @@
             "type": "string"
         },
         "version": {
-            "default": "0.2.0",
+            "default": "0.2.1",
             "title": "Version",
             "type": "string"
         },

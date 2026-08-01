@@ -9,7 +9,7 @@
         "displayName": "ContextVault",
         "description": "Open-source AI conversation archive platform for preserving complete context in a portable, lossless format.",
         "summary": "Preserve AI Context. Forever.",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "status": "stable",
         "visibility": "public",
         "category": "desktop-application",
@@ -166,7 +166,7 @@
     "release": {
         "strategy": "GitHub Releases",
         "versioning": "Semantic Versioning",
-        "latestVersion": "0.2.0",
+        "latestVersion": "0.2.1",
         "releaseNotes": "docs/release-notes/"
     },
     "quality": {
@@ -203,7 +203,7 @@
     },
     "metadata": {
         "createdAt": "2026-07-28T00:00:00Z",
-        "updatedAt": "2026-07-31T19:29:00Z",
+        "updatedAt": "2026-08-01T05:21:00Z",
         "manifestAuthor": "Vib Tools",
         "generator": "YGit CLI / ContextVault forensic completion",
         "specification": "VPMS",

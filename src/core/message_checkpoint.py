@@ -40,6 +40,12 @@ class MessageCheckpointResult:
         }
 
 
+
+
+class MessageCheckpointInfrastructureError(RuntimeError):
+    """Raised when durable checkpoint storage or verification fails."""
+
+
 class MessageCheckpointStore:
     """Persist and verify each message before browser scrolling continues."""
 
@@ -106,7 +112,12 @@ class MessageCheckpointStore:
                 attempt = max(1, self._attempts_by_key.get(key, 0))
                 reason = self._errors_by_key.get(key, "Configured message retries were exhausted.")
                 message = self._degraded_message(item, sequence_number, attempt, captured_at, reason)
-                self._persist_and_verify(key, message)
+                try:
+                    self._persist_and_verify(key, message)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    raise MessageCheckpointInfrastructureError(
+                        f"Unable to persist degraded checkpoint for {key}: {exc}"
+                    ) from exc
                 warning = (
                     f"Message {key} was preserved as a degraded placeholder after {attempt} capture attempt(s): {reason}"
                 )
@@ -131,13 +142,23 @@ class MessageCheckpointStore:
                     if message.timestamp is None and source_timestamp is not None:
                         message.timestamp = source_timestamp
                         message.timestamp_source = "message_timestamp"
-                    self._persist_and_verify(key, message)
                 except Exception as exc:
                     reason = f"{type(exc).__name__}: {exc}"
                     self._errors_by_key[key] = reason
-                    LOGGER.warning("Message checkpoint verification failed key=%s attempt=%s: %s", key, attempt, reason)
+                    LOGGER.warning(
+                        "Message checkpoint parsing failed key=%s attempt=%s: %s",
+                        key,
+                        attempt,
+                        reason,
+                    )
                     result.failed[key] = reason
                     continue
+                try:
+                    self._persist_and_verify(key, message)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    raise MessageCheckpointInfrastructureError(
+                        f"Unable to persist and verify checkpoint for {key}: {exc}"
+                    ) from exc
                 else:
                     self._errors_by_key.pop(key, None)
                     self._warnings_by_key.pop(key, None)
@@ -155,8 +176,17 @@ class MessageCheckpointStore:
         return [self._messages_by_key[key].model_copy(deep=True) for key in order]
 
     def close(self) -> None:
-        """Delete temporary checkpoint files after archive publication or cancellation."""
-        shutil.rmtree(self.root, ignore_errors=True)
+        """Delete temporary checkpoint files and report cleanup failures."""
+        if not self.root.exists():
+            return
+        try:
+            shutil.rmtree(self.root)
+        except OSError:
+            LOGGER.warning(
+                "Unable to remove temporary message checkpoint directory: %s",
+                self.root,
+                exc_info=True,
+            )
 
     def _persist_and_verify(self, key: str, message: ConversationMessage) -> None:
         digest = hashlib.sha256(key.encode("utf-8", errors="surrogatepass")).hexdigest()[:24]

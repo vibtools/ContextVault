@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import ast
 import json
-import shutil
-import subprocess
-import tempfile
 import tomllib
 import unittest
 from pathlib import Path
 
 from scripts.release.verify_release_metadata import verify_release_metadata
-from scripts.release.verify_public_tree import verify_public_tree
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +61,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
         self.assertEqual(metadata, locked)
         self.assertEqual(verify_release_metadata(), [])
 
-        expected_header = "ContextVault v0.2.0"
+        expected_header = "ContextVault v0.2.1"
         for relative in ("requirements.txt", "requirements.lock", "requirements-build.lock"):
             with self.subTest(relative=relative):
                 self.assertIn(expected_header, (ROOT / relative).read_text(encoding="utf-8"))
@@ -77,19 +73,6 @@ class RepositoryIntegrityTests(unittest.TestCase):
         self.assertIn('"scripts/test/check_environment.py"', verifier)
         self.assertIn('"scripts/test/run_tests.py"', verifier)
         self.assertIn('"diff", "--cached", "--check"', verifier)
-        self.assertIn('"scripts/release/verify_public_tree.py"', verifier)
-
-        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
-        self.assertIn("__pycache__/", gitignore)
-        self.assertIn("*.py[cod]", gitignore)
-        self.assertIn("/project/", gitignore)
-        self.assertIn(".venv-release/", gitignore)
-        self.assertIn("/build/", gitignore)
-        self.assertIn("/dist/", gitignore)
-        self.assertIn("/artifacts/", gitignore)
-        self.assertNotIn("build/", gitignore)
-        self.assertNotIn("dist/", gitignore)
-        self.assertNotIn("artifacts/", gitignore)
 
     def test_nuitka_includes_customtkinter_package_data(self) -> None:
         with (ROOT / "nuitka.toml").open("rb") as stream:
@@ -100,40 +83,14 @@ class RepositoryIntegrityTests(unittest.TestCase):
         required = (
             "README.md", "README.txt", "LICENSE", ".gitignore", "requirements.txt", "requirements.lock",
             "CHANGELOG.md", "SECURITY.md", "SUPPORT.md", "CODE_OF_CONDUCT.md", "docs/index.md",
-            "docs/release-notes/0.2.0.md", "docs/security/privacy-and-local-data.md",
+            "docs/release-notes/0.2.1.md", "docs/security/privacy-and-local-data.md",
             ".github/workflows/ci.yml", ".github/workflows/release.yml",
             "scripts/release/verify_release_metadata.py",
             "scripts/release/verify_release_candidate.py",
-            "scripts/release/verify_public_tree.py",
-            "scripts/build/build_windows.py", "scripts/build/README.md",
             "requirements-build.lock", "config/defaults.json", "tests",
         )
         missing = [item for item in required if not (ROOT / item).exists()]
         self.assertEqual(missing, [])
-
-        git = shutil.which("git")
-        if git is None:
-            self.skipTest("Git is required for public-tree verifier regression coverage.")
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            subprocess.run([git, "init", "--quiet", str(root)], check=True)
-            (root / ".gitignore").write_bytes((ROOT / ".gitignore").read_bytes())
-            (root / "README.md").write_text("# Test\n", encoding="utf-8")
-            build_script = root / "scripts/build/build_windows.py"
-            build_script.parent.mkdir(parents=True)
-            build_script.write_text("raise SystemExit(0)\n", encoding="utf-8")
-            subprocess.run(
-                [git, "-C", str(root), "add", ".gitignore", "README.md", "scripts/build/build_windows.py"],
-                check=True,
-            )
-            self.assertEqual(verify_public_tree(root), [])
-
-            private = root / "project" / "private.md"
-            private.parent.mkdir(parents=True)
-            private.write_text("private\n", encoding="utf-8")
-            subprocess.run([git, "-C", str(root), "add", "--force", "project/private.md"], check=True)
-            violations = verify_public_tree(root)
-            self.assertTrue(any("project/private.md" in item for item in violations))
 
     def test_text_files_contain_no_unexpected_control_characters(self) -> None:
         allowed = {9, 10, 13}

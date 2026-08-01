@@ -223,21 +223,21 @@ class ConversationParser:
         return ConversationRecord.model_validate(record_data)
 
     def _first_message_node(self, soup: BeautifulSoup) -> Tag | None:
-        for selector in self.MESSAGE_SELECTORS:
-            candidate = soup.select_one(selector)
-            if isinstance(candidate, Tag):
-                return candidate
-        return None
+        nodes = self._find_message_nodes(soup)
+        return nodes[0] if nodes else None
 
     def _find_message_nodes(self, soup: BeautifulSoup) -> list[Tag]:
-        for selector in self.MESSAGE_SELECTORS:
-            candidates = [node for node in soup.select(selector) if isinstance(node, Tag)]
-            if not candidates:
-                continue
-            if selector == "[data-message-author-role]":
-                return self._remove_nested_candidates(candidates, "data-message-author-role")
-            return self._remove_nested_candidates(candidates, None)
-        return []
+        """Return every supported message container in document order.
+
+        ChatGPT can mix conversation-turn wrappers, data-message-id wrappers,
+        and role-bearing descendants in the same document. Selecting the first
+        non-empty selector family silently drops messages from other families.
+        The combined selector plus outermost-container de-duplication preserves
+        mixed layouts while avoiding nested duplicate parsing.
+        """
+        selector = ", ".join(self.MESSAGE_SELECTORS)
+        candidates = [node for node in soup.select(selector) if isinstance(node, Tag)]
+        return self._remove_nested_candidates(candidates, None)
 
     @staticmethod
     def _remove_nested_candidates(candidates: list[Tag], attribute: str | None) -> list[Tag]:
@@ -269,9 +269,13 @@ class ConversationParser:
         html = content_node.decode_contents(formatter="html").strip()
         plain_text = content_node.get_text("\n", strip=True)
         markdown = markdownify(html, heading_style="ATX", bullets="-").strip() if html else plain_text
+        nested_message = node.select_one("[data-message-id]")
+        nested_turn = node.select_one("[data-testid^='conversation-turn']")
         source_id = (
             node.get("data-message-id")
+            or (nested_message.get("data-message-id") if isinstance(nested_message, Tag) else None)
             or node.get("data-testid")
+            or (nested_turn.get("data-testid") if isinstance(nested_turn, Tag) else None)
             or node.get("id")
             or str(uuid5(NAMESPACE_URL, f"{conversation_id}:{sequence_number}:{role}:{plain_text}"))
         )
@@ -318,6 +322,11 @@ class ConversationParser:
         role = str(node.get("data-message-author-role", "")).lower().strip()
         if role in {"user", "assistant", "system", "tool"}:
             return role
+        nested_role = node.select_one("[data-message-author-role]")
+        if isinstance(nested_role, Tag):
+            role = str(nested_role.get("data-message-author-role", "")).lower().strip()
+            if role in {"user", "assistant", "system", "tool"}:
+                return role
         test_id = str(node.get("data-testid", "")).lower()
         classes = " ".join(node.get("class", [])).lower()
         combined = f"{test_id} {classes}"

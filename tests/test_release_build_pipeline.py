@@ -82,6 +82,12 @@ class ReleaseBuildPipelineTests(unittest.TestCase):
         self.assertIn("--windows-console-mode=disable", command)
         self.assertIn("--output-filename=ContextVault", command)
         self.assertIn("--include-package-data=customtkinter", command)
+        self.assertEqual(configuration.lto, "no")
+        self.assertTrue(configuration.low_memory)
+        self.assertEqual(configuration.jobs, 1)
+        self.assertIn("--lto=no", command)
+        self.assertIn("--low-memory", command)
+        self.assertIn("--jobs=1", command)
         self.assertTrue(configuration.assume_yes_for_downloads)
         self.assertIn("--assume-yes-for-downloads", command)
         self.assertEqual(Path(command[-1]).resolve(), (ROOT / "src/app.py").resolve())
@@ -110,6 +116,9 @@ class ReleaseBuildPipelineTests(unittest.TestCase):
                 "runtime/themes",
             ):
                 (distribution / relative).mkdir(parents=True)
+            (distribution / "runtime/config/defaults.json").write_text(
+                "{}\n", encoding="utf-8"
+            )
             (distribution / "ContextVault.exe").write_bytes(b"MZ-test")
             (distribution / "README.txt").write_text("readme\n", encoding="utf-8")
             (distribution / "LICENSE").write_text("license\n", encoding="utf-8")
@@ -148,6 +157,9 @@ class ReleaseBuildPipelineTests(unittest.TestCase):
                     "runtime/themes",
                 ):
                     (distribution / relative).mkdir(parents=True, exist_ok=True)
+                (distribution / "runtime/config/defaults.json").write_text(
+                    "{}\n", encoding="utf-8"
+                )
                 (distribution / "ContextVault.exe").write_bytes(b"MZ-test")
                 (distribution / "README.txt").write_text("readme\n", encoding="utf-8")
                 (distribution / "LICENSE").write_text("license\n", encoding="utf-8")
@@ -171,6 +183,34 @@ class ReleaseBuildPipelineTests(unittest.TestCase):
             config = config.replace("assets=runtime/assets", "missing-assets=runtime/assets")
             (root / "nuitka.toml").write_text(config, encoding="utf-8")
             with self.assertRaisesRegex(BuildConfigurationError, "does not exist"):
+                load_configuration(root)
+
+    def test_configuration_rejects_memory_unsafe_release_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_minimal_repository(root)
+            config_path = root / "nuitka.toml"
+            config = config_path.read_text(encoding="utf-8").replace(
+                'lto = "no"',
+                'lto = "yes"',
+                1,
+            )
+            config_path.write_text(config, encoding="utf-8")
+            with self.assertRaisesRegex(BuildConfigurationError, "memory-safe"):
+                load_configuration(root)
+
+    def test_configuration_rejects_parallel_release_compilation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_minimal_repository(root)
+            config_path = root / "nuitka.toml"
+            config = config_path.read_text(encoding="utf-8").replace(
+                "jobs = 1",
+                "jobs = 2",
+                1,
+            )
+            config_path.write_text(config, encoding="utf-8")
+            with self.assertRaisesRegex(BuildConfigurationError, "must be 1"):
                 load_configuration(root)
 
     @staticmethod

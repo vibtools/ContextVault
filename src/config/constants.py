@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 APPLICATION_NAME = "ContextVault"
-APPLICATION_VERSION = "0.2.0"
+APPLICATION_VERSION = "0.2.1"
 ARCHIVE_FORMAT = "contextvault"
 ARCHIVE_SCHEMA_VERSION = "1.0"
 DEFAULT_WINDOW_SIZE = "1180x760"

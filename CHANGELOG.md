@@ -2,11 +2,37 @@
 
 All notable public changes to ContextVault are documented in this file.
 
-ContextVault follows Semantic Versioning for the application. The archive schema has its own version and remains `1.0` in application version `0.2.0`.
+ContextVault follows Semantic Versioning for the application. The archive schema has its own version and remains `1.0` in application version `0.2.1`.
 
 ## [Unreleased]
 
 No unreleased public changes are documented yet.
+
+## [0.2.1] - 2026-08-01
+
+### Summary
+
+ContextVault 0.2.1 is a cumulative export and release-build reliability hotfix. It preserves archive schema `1.0` and addresses live virtualized-conversation stalls, browser workflow lifecycle races, parser/checkpoint edge cases, portable runtime-root validation, and MSVC build-memory exhaustion.
+
+### Fixed
+
+- Added bounded semantic recovery for non-image DOM mutation churn and persistent non-semantic loaders.
+- Added verified forced-scroll and bounded non-empty reload recovery while preserving completed checkpoints.
+- Preserved the established stalled-image fast path independently from general semantic recovery.
+- Improved nested active scroll-container selection and diagnostic visibility.
+- Retried transient Playwright observation failures in place without resetting accumulated messages.
+- Preserved mixed ChatGPT message containers, nested source identity, author role, and export-critical resource attributes.
+- Treated checkpoint storage/infrastructure failure as fatal instead of degrading valid message content.
+- Released the exclusive browser workflow lease before terminal task state publication and retained an idempotent queued-cancellation fallback.
+- Strengthened portable application-root and shipped-defaults validation.
+- Required `runtime/config/defaults.json` in build and release-package verification.
+- Disabled release LTO and enabled deterministic low-memory single-job Nuitka compilation to prevent MSVC `C1002`/`LNK1257` failures.
+
+### Validation
+
+- Canonical Windows validation passed 85 targeted tests and 109 complete tests.
+- Exact cumulative replacement hashes, Python 3.12 compilation, whitespace, public-tree privacy, locked dependencies, and isolated release-candidate verification passed.
+- GitHub Actions tag build and authenticated live export remain the authoritative final artifact gates.
 
 ## [0.2.0] - 2026-07-31
 
@@ -96,6 +122,7 @@ ContextVault 0.2.0 is an export reliability and stability release focused on lar
 - Concurrent export requests could interleave and collide.
 - Version labels in several documents were inconsistent with the public tag.
 
-[Unreleased]: https://github.com/vibtools/ContextVault/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/vibtools/ContextVault/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/vibtools/ContextVault/releases/tag/v0.2.1
 [0.2.0]: https://github.com/vibtools/ContextVault/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vibtools/ContextVault/releases/tag/v0.1.0

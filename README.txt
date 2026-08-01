@@ -1,4 +1,4 @@
-ContextVault 0.2.0
+ContextVault 0.2.1
 ==================
 
 ContextVault saves fully loaded ChatGPT conversations as portable,

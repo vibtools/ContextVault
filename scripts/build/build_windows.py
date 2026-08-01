@@ -33,6 +33,7 @@ REQUIRED_DISTRIBUTION_PATHS = (
     "runtime",
     "runtime/assets",
     "runtime/config",
+    "runtime/config/defaults.json",
     "runtime/icons",
     "runtime/schemas",
     "runtime/templates",
@@ -64,6 +65,8 @@ _ALLOWED_NUITKA_KEYS = {
     "nofollow_import_to",
     "noinclude_default_mode",
     "assume_yes_for_downloads",
+    "low_memory",
+    "jobs",
     "msvc",
 }
 _VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
@@ -103,6 +106,8 @@ class BuildConfiguration:
     nofollow_import_to: tuple[str, ...]
     noinclude_default_mode: str
     assume_yes_for_downloads: bool
+    low_memory: bool
+    jobs: int
     msvc: str
 
 
@@ -123,6 +128,13 @@ def _require_bool(payload: dict[str, Any], key: str, table: str) -> bool:
     value = payload.get(key)
     if not isinstance(value, bool):
         raise BuildConfigurationError(f"{table}.{key} must be true or false.")
+    return value
+
+
+def _require_int(payload: dict[str, Any], key: str, table: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BuildConfigurationError(f"{table}.{key} must be an integer.")
     return value
 
 
@@ -215,6 +227,8 @@ def load_configuration(root: Path = ROOT, config_path: Path | None = None) -> Bu
         nofollow_import_to=_require_string_tuple(nuitka, "nofollow_import_to", "nuitka"),
         noinclude_default_mode=_require_string(nuitka, "noinclude_default_mode", "nuitka"),
         assume_yes_for_downloads=_require_bool(nuitka, "assume_yes_for_downloads", "nuitka"),
+        low_memory=_require_bool(nuitka, "low_memory", "nuitka"),
+        jobs=_require_int(nuitka, "jobs", "nuitka"),
         msvc=_require_string(nuitka, "msvc", "nuitka"),
     )
 
@@ -230,6 +244,18 @@ def load_configuration(root: Path = ROOT, config_path: Path | None = None) -> Bu
         raise BuildConfigurationError("The official release must be standalone OneDir, not onefile.")
     if configuration.output_filename != "ContextVault":
         raise BuildConfigurationError("nuitka.output_filename must be 'ContextVault'.")
+    if configuration.lto != "no":
+        raise BuildConfigurationError(
+            "nuitka.lto must be 'no' for the official memory-safe Windows release build."
+        )
+    if not configuration.low_memory:
+        raise BuildConfigurationError(
+            "nuitka.low_memory must be true for the official Windows release build."
+        )
+    if configuration.jobs != 1:
+        raise BuildConfigurationError(
+            "nuitka.jobs must be 1 for deterministic low-memory Windows compilation."
+        )
 
     _resolve_repository_path(root, configuration.main_file, "project.main_file")
     _resolve_repository_path(root, configuration.windows_icon_from_ico, "nuitka.windows_icon_from_ico")
@@ -275,6 +301,7 @@ def build_command(
         f"--output-dir={output_dir}",
         f"--output-filename={configuration.output_filename}",
         f"--lto={configuration.lto}",
+        f"--jobs={configuration.jobs}",
         f"--windows-console-mode={configuration.windows_console_mode}",
         f"--report={report}",
         f"--company-name={configuration.company_name}",
@@ -292,6 +319,8 @@ def build_command(
         command.append("--remove-output")
     if configuration.assume_yes_for_downloads:
         command.append("--assume-yes-for-downloads")
+    if configuration.low_memory:
+        command.append("--low-memory")
 
     _append_repeated(command, "--enable-plugin", configuration.enable_plugin)
     _append_repeated(command, "--include-package-data", configuration.include_package_data)

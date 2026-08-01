@@ -37,6 +37,7 @@ from src.browser.selectors import (
     CONVERSATION_LINK_SELECTOR,
     FALLBACK_MESSAGE_SELECTOR,
     LOADING_SELECTOR,
+    MESSAGE_ID_SELECTOR,
     MESSAGE_SELECTOR,
     MODEL_SELECTORS,
     PRIMARY_MESSAGE_SELECTOR,
@@ -59,17 +60,19 @@ MessageCheckpointCallback = Callable[
 
 
 _OBSERVATION_SCRIPT = r"""
-({
+async ({
     messageSelector,
     primaryMessageSelector,
     fallbackMessageSelector,
+    messageIdSelector,
     applicationRootSelector,
     conversationContainerSelector,
     loadingSelector,
     streamingSelector,
     modelSelectors,
     workspaceSelectors,
-    scrollUp
+    scrollUp,
+    forceScroll
 }) => {
     const stateKey = '__contextVaultObservationV2';
     const root = document.querySelector(conversationContainerSelector)
@@ -103,7 +106,8 @@ _OBSERVATION_SCRIPT = r"""
             root,
             revision: 0,
             lastMutationAt: performance.now(),
-            observer: null
+            observer: null,
+            scroller: null
         };
         observation.observer = new MutationObserver(mutations => {
             if (mutations.some(isRelevantMutation)) {
@@ -122,15 +126,25 @@ _OBSERVATION_SCRIPT = r"""
     }
 
     const canonicalMessages = () => {
-        const primary = Array.from(document.querySelectorAll(primaryMessageSelector));
-        if (primary.length) {
-            return primary.filter(node => !node.parentElement?.closest(primaryMessageSelector));
-        }
-        const fallback = Array.from(document.querySelectorAll(fallbackMessageSelector));
-        if (fallback.length) {
-            return fallback.filter(node => !node.parentElement?.closest(fallbackMessageSelector));
-        }
-        return Array.from(document.querySelectorAll('main article'));
+        const selectors = [
+            fallbackMessageSelector,
+            messageIdSelector,
+            primaryMessageSelector,
+            'main article'
+        ].filter(Boolean);
+        const candidates = Array.from(
+            document.querySelectorAll(selectors.join(', '))
+        ).filter(node => root.contains(node));
+        const candidateSet = new Set(candidates);
+        return candidates.filter(node => {
+            let parent = node.parentElement;
+            while (parent && parent !== root.parentElement) {
+                if (candidateSet.has(parent)) return false;
+                if (parent === root) break;
+                parent = parent.parentElement;
+            }
+            return true;
+        });
     };
 
     const hashText = value => {
@@ -143,23 +157,93 @@ _OBSERVATION_SCRIPT = r"""
     };
 
     const messages = canonicalMessages();
-    let scroller = null;
-    let node = messages[0] || root;
-    while (node && node !== document.body) {
-        const style = getComputedStyle(node);
-        if (node.scrollHeight > node.clientHeight + 50 && /(auto|scroll)/.test(style.overflowY)) {
-            scroller = node;
-            break;
+    const documentScroller = document.scrollingElement || document.documentElement;
+    const candidates = [];
+    const seenCandidates = new Set();
+
+    const addCandidate = candidate => {
+        if (!(candidate instanceof Element) || seenCandidates.has(candidate)) return;
+        seenCandidates.add(candidate);
+        const style = getComputedStyle(candidate);
+        const scrollRange = Number(candidate.scrollHeight || 0) - Number(candidate.clientHeight || 0);
+        const scrollable = candidate === documentScroller
+            || (scrollRange > 50 && /(auto|scroll|overlay)/.test(style.overflowY));
+        if (scrollable) candidates.push(candidate);
+    };
+
+    const addScrollableAncestors = start => {
+        let candidate = start instanceof Element ? start : null;
+        while (candidate) {
+            addCandidate(candidate);
+            if (candidate === document.documentElement) break;
+            candidate = candidate.parentElement;
         }
-        node = node.parentElement;
-    }
-    scroller = scroller || document.scrollingElement || document.documentElement;
+    };
+
+    addScrollableAncestors(messages[0]?.parentElement || root);
+    addScrollableAncestors(messages[messages.length - 1]?.parentElement || root);
+    addScrollableAncestors(root);
+    addCandidate(documentScroller);
+
+    const candidateScore = candidate => {
+        const coverage = messages.reduce(
+            (count, message) => count + (
+                candidate === documentScroller || candidate.contains(message) ? 1 : 0
+            ),
+            0
+        );
+        const scrollTop = Math.max(0, Number(candidate.scrollTop || 0));
+        const scrollRange = Math.max(
+            0,
+            Number(candidate.scrollHeight || 0) - Number(candidate.clientHeight || 0)
+        );
+        const activeBonus = scrollTop > 1 ? 10_000_000_000 : 0;
+        const nestedBonus = candidate === documentScroller ? 0 : 1_000_000_000;
+        const cachedBonus = candidate === observation.scroller ? 1_000_000 : 0;
+        return (
+            coverage * 100_000_000_000
+            + activeBonus
+            + nestedBonus
+            + cachedBonus
+            + Math.min(scrollRange, 999_999)
+        );
+    };
+
+    let scroller = candidates.sort(
+        (left, right) => candidateScore(right) - candidateScore(left)
+    )[0];
+    scroller = scroller || documentScroller;
+    observation.scroller = scroller;
+
     const beforeScrollTop = Number(scroller.scrollTop || 0);
     const scrollHeight = Number(scroller.scrollHeight || document.documentElement.scrollHeight || 0);
     const clientHeight = Number(scroller.clientHeight || window.innerHeight || 0);
+    const scrollRange = Math.max(0, scrollHeight - clientHeight);
     const scrollerRect = scroller.getBoundingClientRect
         ? scroller.getBoundingClientRect()
         : {top: 0};
+    const scrollerIdentity = [
+        (scroller.tagName || 'document').toLowerCase(),
+        scroller.id ? `#${scroller.id}` : '',
+        scroller.getAttribute?.('role') ? `[role=${scroller.getAttribute('role')}]` : '',
+        scroller.getAttribute?.('data-testid')
+            ? `[data-testid=${scroller.getAttribute('data-testid')}]`
+            : ''
+    ].filter(Boolean).join('');
+
+    const isElementVisible = element => {
+        if (!(element instanceof Element) || !element.isConnected) return false;
+        const style = getComputedStyle(element);
+        if (
+            style.display === 'none'
+            || style.visibility === 'hidden'
+            || Number.parseFloat(style.opacity || '1') === 0
+        ) {
+            return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    };
 
     const isImagePending = image => {
         const source = image.currentSrc || image.src || image.getAttribute('data-src') || '';
@@ -168,7 +252,8 @@ _OBSERVATION_SCRIPT = r"""
         // Asset download later remains the authoritative byte-integrity check.
         return !image.complete;
     };
-    const loadingElements = Array.from(document.querySelectorAll(loadingSelector));
+    const loadingElements = Array.from(document.querySelectorAll(loadingSelector))
+        .filter(isElementVisible);
     const isImageLoadingIndicator = element => {
         const message = element.closest(messageSelector);
         if (!message) return false;
@@ -186,6 +271,12 @@ _OBSERVATION_SCRIPT = r"""
     };
     const imageLoadingElements = loadingElements.filter(isImageLoadingIndicator);
     const blockingLoadingElements = loadingElements.filter(element => !isImageLoadingIndicator(element));
+    const blockingLoaderDescriptors = blockingLoadingElements.slice(0, 5).map(element => (
+        `${element.tagName.toLowerCase()}`
+        + `${element.getAttribute('role') ? `[role=${element.getAttribute('role')}]` : ''}`
+        + `${element.getAttribute('data-testid') ? `[data-testid=${element.getAttribute('data-testid')}]` : ''}`
+        + `${element.getAttribute('aria-label') ? `[aria-label=${element.getAttribute('aria-label').slice(0, 80)}]` : ''}`
+    ));
     const attachmentSource = element => (
         element.getAttribute('href')
         || element.getAttribute('data-download-url')
@@ -224,6 +315,15 @@ _OBSERVATION_SCRIPT = r"""
             || ''
         ).trim();
         const text = (node.innerText || node.textContent || '').trim();
+        const semanticClone = node.cloneNode(true);
+        semanticClone.querySelectorAll(
+            '[role="progressbar"], [aria-busy="true"], [data-loading="true"], '
+            + '[data-testid*="loading" i], [data-testid*="spinner" i], '
+            + '[data-is-streaming="true"], [data-testid="stop-button"]'
+        ).forEach(element => element.remove());
+        const semanticText = (
+            semanticClone.innerText || semanticClone.textContent || ''
+        ).trim();
         const markup = node.outerHTML || '';
         const timestamp = (
             node.getAttribute('data-message-timestamp')
@@ -234,6 +334,40 @@ _OBSERVATION_SCRIPT = r"""
             || null
         );
         const signature = `${role}:${hashText(text)}:${hashText(markup)}`;
+        const semanticImageValues = Array.from(node.querySelectorAll('img')).map(image => [
+            image.currentSrc || image.getAttribute('src') || image.getAttribute('data-src') || '',
+            image.getAttribute('alt') || ''
+        ]);
+        const semanticLinkValues = Array.from(node.querySelectorAll(
+            'a[href], [data-download-url], [data-file-url], [data-href], [data-url], '
+            + '[data-file-id], [data-filename], [data-file-name]'
+        )).map(element => [
+            element.getAttribute('href') || '',
+            element.getAttribute('data-download-url') || '',
+            element.getAttribute('data-file-url') || '',
+            element.getAttribute('data-href') || '',
+            element.getAttribute('data-url') || '',
+            element.getAttribute('data-file-id') || '',
+            element.getAttribute('data-filename') || '',
+            element.getAttribute('data-file-name') || '',
+            (element.innerText || element.textContent || '').trim()
+        ]);
+        const semanticCodeValues = Array.from(node.querySelectorAll('pre code')).map(code => [
+            code.className || '',
+            code.textContent || ''
+        ]);
+        const semanticTableValues = Array.from(node.querySelectorAll('table')).map(
+            table => table.textContent || ''
+        );
+        const semanticSignature = hashText(JSON.stringify([
+            role,
+            semanticText,
+            timestamp || '',
+            semanticImageValues,
+            semanticLinkValues,
+            semanticCodeValues,
+            semanticTableValues
+        ]));
         const nodeRect = node.getBoundingClientRect();
         const documentTop = Math.round(nodeRect.top - Number(scrollerRect.top || 0) + beforeScrollTop);
         let key = sourceKey;
@@ -258,6 +392,7 @@ _OBSERVATION_SCRIPT = r"""
         return {
             key,
             signature,
+            semanticSignature,
             role,
             fallback,
             domIndex: index,
@@ -276,7 +411,7 @@ _OBSERVATION_SCRIPT = r"""
     });
 
     const visibleText = (root.innerText || root.textContent || '').toLowerCase();
-    const buttons = Array.from(root.querySelectorAll('button'));
+    const buttons = Array.from(root.querySelectorAll('button')).filter(isElementVisible);
     const continueRequired = buttons.some(button => {
         const text = `${button.innerText || ''} ${button.getAttribute('aria-label') || ''}`.toLowerCase();
         return text.includes('continue generating') || text.includes('continue response');
@@ -285,7 +420,9 @@ _OBSERVATION_SCRIPT = r"""
         const text = `${button.innerText || ''} ${button.getAttribute('aria-label') || ''}`.toLowerCase();
         return text.includes('stop generating');
     });
-    const streaming = Boolean(document.querySelector(streamingSelector)) || stopGenerating;
+    const visibleStreamingElements = Array.from(document.querySelectorAll(streamingSelector))
+        .filter(isElementVisible);
+    const streaming = visibleStreamingElements.length > 0 || stopGenerating;
     const loadingCount = blockingLoadingElements.length;
     const imageLoadingCount = imageLoadingElements.length;
     const imageCount = serializedMessages.reduce((total, item) => total + item.imageCount, 0);
@@ -298,18 +435,40 @@ _OBSERVATION_SCRIPT = r"""
     const tableCount = serializedMessages.reduce((total, item) => total + item.tableCount, 0);
 
     let afterScrollTop = beforeScrollTop;
-    const windowReadyToScroll = document.readyState !== 'loading'
+    let scrollStrategy = 'none';
+    const baseWindowReadyToScroll = document.readyState !== 'loading'
         && serializedMessages.length > 0
         && !streaming
-        && !continueRequired
-        && loadingCount === 0;
-    if (scrollUp && windowReadyToScroll && beforeScrollTop > 0) {
-        const step = Math.max(600, Math.floor(clientHeight * 0.85));
-        afterScrollTop = Math.max(0, beforeScrollTop - step);
-        scroller.scrollTop = afterScrollTop;
+        && !continueRequired;
+    const windowReadyToScroll = baseWindowReadyToScroll && loadingCount === 0;
+    const scrollAllowed = windowReadyToScroll || (forceScroll && baseWindowReadyToScroll);
+    if (scrollUp && scrollAllowed && beforeScrollTop > 0) {
+        const baseStep = Math.max(600, Math.floor(clientHeight * 0.85));
+        const step = forceScroll
+            ? Math.max(baseStep * 3, Math.floor(clientHeight * 2.25))
+            : baseStep;
+        const target = Math.max(0, beforeScrollTop - step);
+        scroller.scrollTop = target;
+        scrollStrategy = forceScroll ? 'recovery-step' : 'step';
         scroller.dispatchEvent(new Event('scroll', {bubbles: true}));
-    } else if (scrollUp && windowReadyToScroll && beforeScrollTop <= 1) {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+        if (forceScroll && Number(scroller.scrollTop || 0) >= beforeScrollTop - 1) {
+            const anchor = messages[0];
+            if (anchor) {
+                anchor.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'auto'});
+                scroller.scrollTop = Math.max(0, Number(scroller.scrollTop || beforeScrollTop) - step);
+                scrollStrategy = 'recovery-anchor';
+                scroller.dispatchEvent(new Event('scroll', {bubbles: true}));
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            }
+        }
+        afterScrollTop = Number(scroller.scrollTop || 0);
+    } else if (scrollUp && scrollAllowed && beforeScrollTop <= 1) {
+        scrollStrategy = 'top-confirmation';
         scroller.dispatchEvent(new Event('scroll', {bubbles: true}));
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        afterScrollTop = Number(scroller.scrollTop || 0);
     }
 
     const firstText = selectors => {
@@ -322,7 +481,6 @@ _OBSERVATION_SCRIPT = r"""
     };
 
     const accessDenied = /you (?:do not|don't) have access|conversation (?:not found|unavailable)|unable to load conversation/.test(visibleText);
-    const rootExists = Boolean(root);
     const documentReady = document.readyState === 'interactive' || document.readyState === 'complete';
     const appReady = Boolean(document.querySelector(applicationRootSelector));
     const conversationContainer = Boolean(document.querySelector(conversationContainerSelector));
@@ -336,13 +494,18 @@ _OBSERVATION_SCRIPT = r"""
         mutationRevision: observation.revision,
         mutationIdleMs: Math.max(0, performance.now() - observation.lastMutationAt),
         beforeScrollTop,
-        afterScrollTop: Number(scroller.scrollTop || afterScrollTop),
+        afterScrollTop,
+        scrollDelta: afterScrollTop - beforeScrollTop,
+        scrollStrategy,
         scrollHeight,
         clientHeight,
-        atTop: Number(scroller.scrollTop || afterScrollTop) <= 1,
+        scrollRange,
+        scrollerIdentity,
+        atTop: afterScrollTop <= 1,
         streaming,
         continueRequired,
         loadingCount,
+        blockingLoaderDescriptors,
         imageLoadingCount,
         imageCount,
         pendingImages,
@@ -488,6 +651,10 @@ class _ReadinessPolicy:
     maximum_poll_seconds: float
     empty_state_recovery_seconds: float = 60.0
     image_render_grace_seconds: float = 20.0
+    semantic_stability_window_seconds: float = 3.0
+    stall_recovery_seconds: float = 45.0
+    maximum_stall_reloads: int = 2
+    maximum_noop_scrolls: int = 2
 
 
 class _MessageAccumulator:
@@ -896,12 +1063,6 @@ class BrowserManager:
         LOGGER.info("Conversation navigation completed; readiness observation will continue: %s", page.url)
         return {"url": page.url, "title": await self._page_title(page)}
 
-    @retry(
-        retry=retry_if_exception_type((PlaywrightTimeoutError, PlaywrightError)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=0.5, min=0.5, max=3),
-        reraise=True,
-    )
     async def load_complete_conversation(
         self,
         *,
@@ -910,13 +1071,14 @@ class BrowserManager:
         progress_callback: ProgressCallback | None = None,
         message_checkpoint_callback: MessageCheckpointCallback | None = None,
     ) -> dict[str, Any]:
-        """Observe, accumulate, and validate a complete virtualized conversation DOM."""
+        """Observe, accumulate, recover, and validate a complete virtualized conversation DOM."""
         page = await self._select_page()
         policy = _readiness_policy(performance)
         accumulator = _MessageAccumulator()
         started = _monotonic()
         last_change = started
         last_progress = started
+        last_semantic_change = started
         stable_observations = 0
         last_signature: tuple[Any, ...] | None = None
         last_semantic_signature: tuple[Any, ...] | None = None
@@ -937,17 +1099,128 @@ class BrowserManager:
         accepted_pending_images: dict[str, int] = {}
         stalled_image_count = 0
         capture_warnings: list[str] = []
+        semantic_fallback_windows: set[tuple[str, ...]] = set()
+        scroll_attempts = 0
+        forced_scroll_attempts = 0
+        consecutive_noop_scrolls = 0
+        stall_reloads = 0
+        last_scroll_state: dict[str, Any] = {}
+
         LOGGER.info(
-            "Conversation DOM observation started (stallTimeout=%.1fs, stabilityWindow=%.1fs)",
+            "Conversation DOM observation started "
+            "(stallTimeout=%.1fs, recoveryWindow=%.1fs, semanticWindow=%.1fs, stabilityWindow=%.1fs)",
             policy.timeout_seconds,
+            policy.stall_recovery_seconds,
+            policy.semantic_stability_window_seconds,
             policy.stability_window_seconds,
         )
+
+        def diagnostics(now: float) -> dict[str, Any]:
+            return {
+                "stableObservations": stable_observations,
+                "semanticStableObservations": semantic_stable_observations,
+                "semanticStableSeconds": max(0.0, now - last_semantic_change),
+                "scrollAttempts": scroll_attempts,
+                "forcedScrollAttempts": forced_scroll_attempts,
+                "consecutiveNoopScrolls": consecutive_noop_scrolls,
+                "stallReloads": stall_reloads,
+                "checkpointReloads": checkpoint_reloads,
+                "emptyStateReloads": empty_state_reloads,
+                "verifiedCheckpointMessages": len(
+                    verified_checkpoint_keys | skipped_checkpoint_keys
+                ),
+                "lastScrollBefore": last_scroll_state.get("beforeScrollTop"),
+                "lastScrollAfter": last_scroll_state.get("afterScrollTop"),
+                "lastScrollDelta": last_scroll_state.get("scrollDelta"),
+                "lastScrollStrategy": last_scroll_state.get("scrollStrategy"),
+                "scrollerIdentity": (
+                    last_scroll_state.get("scrollerIdentity")
+                    or last_state.get("scrollerIdentity")
+                ),
+                "scrollRange": (
+                    last_scroll_state.get("scrollRange")
+                    or last_state.get("scrollRange")
+                ),
+            }
+
+        async def recover_stalled_window(reason: str, now: float) -> None:
+            nonlocal last_change
+            nonlocal last_progress
+            nonlocal last_semantic_change
+            nonlocal stable_observations
+            nonlocal last_signature
+            nonlocal last_semantic_signature
+            nonlocal semantic_stable_observations
+            nonlocal last_progress_state
+            nonlocal highest_scroll_height
+            nonlocal poll_seconds
+            nonlocal pending_image_signature
+            nonlocal pending_image_started
+            nonlocal consecutive_noop_scrolls
+            nonlocal stall_reloads
+
+            if stall_reloads >= policy.maximum_stall_reloads:
+                raise ConversationReadinessError(
+                    _readiness_timeout_message(
+                        last_state,
+                        accumulator.count,
+                        accumulator.pending_image_count,
+                        policy,
+                        elapsed_seconds=now - started,
+                        inactive_seconds=now - last_progress,
+                        diagnostics=diagnostics(now),
+                        reason=(
+                            f"{reason}; all {policy.maximum_stall_reloads} "
+                            "bounded non-empty stall reload(s) were already used"
+                        ),
+                    )
+                )
+
+            stall_reloads += 1
+            LOGGER.warning(
+                "Recovering stalled non-empty conversation window with reload %s/%s: "
+                "%s; messages=%s checkpointed=%s atTop=%s scrollTop=%s "
+                "scrollHeight=%s loadingCount=%s mutationIdleMs=%s "
+                "semanticStable=%.1fs scroller=%s",
+                stall_reloads,
+                policy.maximum_stall_reloads,
+                reason,
+                accumulator.count,
+                len(verified_checkpoint_keys | skipped_checkpoint_keys),
+                bool(last_state.get("atTop")),
+                int(last_state.get("beforeScrollTop", 0)),
+                int(last_state.get("scrollHeight", 0)),
+                int(last_state.get("loadingCount", 0)),
+                int(last_state.get("mutationIdleMs", 0)),
+                max(0.0, now - last_semantic_change),
+                last_state.get("scrollerIdentity") or "unknown",
+            )
+            await page.reload(wait_until="domcontentloaded")
+            reset_at = _monotonic()
+            last_signature = None
+            last_semantic_signature = None
+            semantic_stable_observations = 0
+            last_semantic_change = reset_at
+            last_progress_state = None
+            highest_scroll_height = 0
+            stable_observations = 0
+            last_change = reset_at
+            last_progress = reset_at
+            pending_image_signature = None
+            pending_image_started = None
+            consecutive_noop_scrolls = 0
+            poll_seconds = policy.initial_poll_seconds
 
         try:
             while True:
                 if cancellation_event.is_set():
                     raise InterruptedError("Conversation loading cancelled.")
-                state = await self._observe_conversation(page, scroll_up=False)
+
+                state = await self._observe_conversation(
+                    page,
+                    scroll_up=False,
+                    force_scroll=False,
+                )
                 last_state = state
                 if bool(state.get("accessDenied")):
                     raise ConversationUnavailableError(
@@ -959,25 +1232,50 @@ class BrowserManager:
                     for item in state.get("messages", [])
                     if isinstance(item, dict)
                 ]
+                previous_count = accumulator.count
+                previous_keys = accumulator.keys
                 accumulator_changed = accumulator.merge(observed_messages)
+                message_progress = (
+                    accumulator.count > previous_count
+                    or accumulator.keys != previous_keys
+                )
                 signature = _observation_signature(state, accumulator)
                 semantic_signature = _window_semantic_signature(observed_messages)
+                now = _monotonic()
+
                 if semantic_signature == last_semantic_signature:
                     semantic_stable_observations += 1
                 else:
                     semantic_stable_observations = 0
+                    last_semantic_change = now
                 last_semantic_signature = semantic_signature
-                now = _monotonic()
+
                 progress_state = _readiness_progress_state(state, accumulator)
                 current_scroll_height = int(progress_state["scrollHeight"])
+                readiness_progress = _made_readiness_progress(
+                    last_progress_state,
+                    progress_state,
+                )
                 meaningful_progress = (
-                    accumulator_changed
-                    or _made_readiness_progress(last_progress_state, progress_state)
+                    message_progress
+                    or readiness_progress
                     or current_scroll_height > highest_scroll_height
                 )
                 if meaningful_progress:
                     last_progress = now
-                highest_scroll_height = max(highest_scroll_height, current_scroll_height)
+                    if (
+                        message_progress
+                        or (
+                            last_progress_state is not None
+                            and int(progress_state["scrollTop"])
+                            < int(last_progress_state["scrollTop"]) - 1
+                        )
+                    ):
+                        consecutive_noop_scrolls = 0
+                highest_scroll_height = max(
+                    highest_scroll_height,
+                    current_scroll_height,
+                )
                 last_progress_state = progress_state
 
                 current_pending_images = {
@@ -994,13 +1292,20 @@ class BrowserManager:
                     ) > 0
                 }
                 unresolved_current_pending = {
-                    key: max(0, count - max(0, int(accepted_pending_images.get(key, 0))))
+                    key: max(
+                        0,
+                        count - max(0, int(accepted_pending_images.get(key, 0))),
+                    )
                     for key, count in current_pending_images.items()
                 }
                 unresolved_current_pending = {
-                    key: count for key, count in unresolved_current_pending.items() if count > 0
+                    key: count
+                    for key, count in unresolved_current_pending.items()
+                    if count > 0
                 }
-                current_pending_signature = tuple(sorted(unresolved_current_pending.items()))
+                current_pending_signature = tuple(
+                    sorted(unresolved_current_pending.items())
+                )
                 if current_pending_signature:
                     if current_pending_signature != pending_image_signature:
                         pending_image_signature = current_pending_signature
@@ -1012,24 +1317,30 @@ class BrowserManager:
                         )
                     elif (
                         pending_image_started is not None
-                        and now - pending_image_started >= policy.image_render_grace_seconds
+                        and now - pending_image_started
+                        >= policy.image_render_grace_seconds
                     ):
                         newly_accepted = 0
                         accepted_keys: list[str] = []
                         for key, unresolved_count in unresolved_current_pending.items():
                             accepted_pending_images[key] = (
-                                max(0, int(accepted_pending_images.get(key, 0))) + unresolved_count
+                                max(
+                                    0,
+                                    int(accepted_pending_images.get(key, 0)),
+                                )
+                                + unresolved_count
                             )
                             newly_accepted += unresolved_count
                             accepted_keys.append(key)
                         if newly_accepted:
                             stalled_image_count += newly_accepted
                             warning = (
-                                f"{newly_accepted} image(s) in {len(accepted_keys)} message(s) did not finish "
-                                f"browser rendering within {policy.image_render_grace_seconds:.1f}s. "
-                                "ContextVault continued the deep scan because the message markup and available image "
-                                "source attributes were checkpointed; archive asset download and validation "
-                                "remain authoritative."
+                                f"{newly_accepted} image(s) in {len(accepted_keys)} message(s) "
+                                f"did not finish browser rendering within "
+                                f"{policy.image_render_grace_seconds:.1f}s. "
+                                "ContextVault continued the deep scan because the message markup "
+                                "and available image source attributes were checkpointed; archive "
+                                "asset download and validation remain authoritative."
                             )
                             capture_warnings.append(warning)
                             LOGGER.warning(warning)
@@ -1041,8 +1352,10 @@ class BrowserManager:
                     pending_image_signature = None
                     pending_image_started = None
 
-                unresolved_accumulated_pending = accumulator.unresolved_pending_image_count(
-                    accepted_pending_images
+                unresolved_accumulated_pending = (
+                    accumulator.unresolved_pending_image_count(
+                        accepted_pending_images
+                    )
                 )
                 progress_state_for_display = dict(state)
                 progress_state_for_display["pendingImages"] = sum(
@@ -1061,7 +1374,10 @@ class BrowserManager:
                 if empty_idle_state:
                     if empty_state_started is None:
                         empty_state_started = now
-                    elif now - empty_state_started >= policy.empty_state_recovery_seconds:
+                    elif (
+                        now - empty_state_started
+                        >= policy.empty_state_recovery_seconds
+                    ):
                         if empty_state_reloads == 0:
                             empty_state_reloads = 1
                             LOGGER.warning(
@@ -1070,15 +1386,19 @@ class BrowserManager:
                                 now - empty_state_started,
                             )
                             await page.reload(wait_until="domcontentloaded")
+                            reset_at = _monotonic()
                             last_signature = None
                             last_semantic_signature = None
                             semantic_stable_observations = 0
+                            last_semantic_change = reset_at
                             last_progress_state = None
                             highest_scroll_height = 0
                             stable_observations = 0
-                            last_change = _monotonic()
-                            last_progress = last_change
+                            last_change = reset_at
+                            last_progress = reset_at
                             empty_state_started = None
+                            pending_image_signature = None
+                            pending_image_started = None
                             poll_seconds = policy.initial_poll_seconds
                             continue
                         raise ConversationReadinessError(
@@ -1095,29 +1415,22 @@ class BrowserManager:
                     poll_seconds = policy.initial_poll_seconds
                     if last_signature is not None:
                         LOGGER.debug(
-                            "Conversation changed: messages=%s revision=%s height=%s scrollTop=%s",
+                            "Conversation changed: messages=%s revision=%s height=%s "
+                            "scrollTop=%s mutationIdleMs=%s semanticStable=%.1fs",
                             accumulator.count,
                             state.get("mutationRevision", 0),
                             state.get("scrollHeight", 0),
                             state.get("beforeScrollTop", 0),
+                            state.get("mutationIdleMs", 0),
+                            max(0.0, now - last_semantic_change),
                         )
                 else:
                     stable_observations += 1
-                    poll_seconds = min(policy.maximum_poll_seconds, poll_seconds * 1.35)
-                last_signature = signature
-
-                inactive_for = now - last_progress
-                if inactive_for >= policy.timeout_seconds:
-                    raise ConversationReadinessError(
-                        _readiness_timeout_message(
-                            last_state,
-                            accumulator.count,
-                            accumulator.pending_image_count,
-                            policy,
-                            elapsed_seconds=now - started,
-                            inactive_seconds=inactive_for,
-                        )
+                    poll_seconds = min(
+                        policy.maximum_poll_seconds,
+                        poll_seconds * 1.35,
                     )
+                last_signature = signature
 
                 ready_flags = {
                     "document": bool(state.get("documentReady")),
@@ -1134,6 +1447,7 @@ class BrowserManager:
                     ),
                 }
                 stable_for = now - last_change
+                semantic_stable_for = now - last_semantic_change
 
                 if progress_callback is not None:
                     stage, detail = _readiness_progress(
@@ -1143,34 +1457,112 @@ class BrowserManager:
                         stable_for,
                         policy,
                     )
-                    progress_ratio = min(1.0, accumulator.count / max(accumulator.count + 20, 1))
-                    activity_ratio = min(1.0, stable_for / max(policy.stability_window_seconds, 0.1))
+                    progress_ratio = min(
+                        1.0,
+                        accumulator.count / max(accumulator.count + 20, 1),
+                    )
+                    activity_ratio = min(
+                        1.0,
+                        max(stable_for, semantic_stable_for)
+                        / max(policy.stability_window_seconds, 0.1),
+                    )
                     readiness_ratio = sum(ready_flags.values()) / len(ready_flags)
                     percentage = min(
                         98.0,
-                        5.0 + readiness_ratio * 45.0 + progress_ratio * 25.0 + activity_ratio * 20.0,
+                        5.0
+                        + readiness_ratio * 45.0
+                        + progress_ratio * 25.0
+                        + activity_ratio * 20.0,
                     )
-                    progress_callback(stage, percentage, detail, accumulator.count, accumulator.count)
+                    progress_callback(
+                        stage,
+                        percentage,
+                        detail,
+                        accumulator.count,
+                        accumulator.count,
+                    )
 
-                stalled_image_window = bool(current_pending_images) and not unresolved_current_pending
                 mutation_stability_confirmed = (
                     int(state.get("mutationIdleMs", 0)) >= 250
                     and stable_observations >= 1
                 )
+                stalled_image_window = (
+                    bool(current_pending_images)
+                    and not unresolved_current_pending
+                )
+                image_stall_semantic_confirmed = (
+                    stalled_image_window
+                    and semantic_stable_observations >= 1
+                )
+                general_semantic_stability_confirmed = (
+                    semantic_stable_observations
+                    >= policy.minimum_stable_observations
+                    and semantic_stable_for
+                    >= policy.semantic_stability_window_seconds
+                )
                 semantic_stability_confirmed = (
-                    stalled_image_window and semantic_stable_observations >= 1
+                    image_stall_semantic_confirmed
+                    or general_semantic_stability_confirmed
+                )
+                semantic_loader_recovery_confirmed = (
+                    general_semantic_stability_confirmed
+                    and semantic_stable_for >= policy.stall_recovery_seconds
+                    and bool(state.get("documentReady"))
+                    and bool(state.get("appReady"))
+                    and bool(state.get("conversationContainer"))
+                    and accumulator.count > 0
+                    and not bool(state.get("streaming"))
+                    and not bool(state.get("continueRequired"))
+                    and not unresolved_current_pending
+                    and unresolved_accumulated_pending == 0
                 )
                 window_settled = (
-                    bool(state.get("windowReadyToScroll"))
+                    (
+                        bool(state.get("windowReadyToScroll"))
+                        or semantic_loader_recovery_confirmed
+                    )
                     and not unresolved_current_pending
-                    and (mutation_stability_confirmed or semantic_stability_confirmed)
+                    and (
+                        mutation_stability_confirmed
+                        or semantic_stability_confirmed
+                    )
                 )
+
+                window_items = [
+                    dict(item)
+                    for item in state.get("messages", [])
+                    if isinstance(item, dict)
+                ]
+                current_window_keys = tuple(
+                    str(item.get("key") or "").strip()
+                    for item in window_items
+                    if str(item.get("key") or "").strip()
+                )
+                if (
+                    window_settled
+                    and semantic_stability_confirmed
+                    and (
+                        not mutation_stability_confirmed
+                        or semantic_loader_recovery_confirmed
+                    )
+                    and current_window_keys not in semantic_fallback_windows
+                ):
+                    semantic_fallback_windows.add(current_window_keys)
+                    LOGGER.warning(
+                        "Using semantic window recovery after %.1fs of unchanged "
+                        "message content: messages=%s revision=%s "
+                        "mutationIdleMs=%s loadingCount=%s "
+                        "windowReadyToScroll=%s scroller=%s",
+                        semantic_stable_for,
+                        len(current_window_keys),
+                        state.get("mutationRevision", 0),
+                        state.get("mutationIdleMs", 0),
+                        state.get("loadingCount", 0),
+                        bool(state.get("windowReadyToScroll")),
+                        state.get("scrollerIdentity") or "unknown",
+                    )
+
                 if window_settled and message_checkpoint_callback is not None:
-                    window_items = [
-                        dict(item)
-                        for item in state.get("messages", [])
-                        if isinstance(item, dict)
-                    ]
                     result = _invoke_message_checkpoint(
                         message_checkpoint_callback,
                         window_items,
@@ -1178,9 +1570,13 @@ class BrowserManager:
                         set(),
                     )
                     verified_checkpoint_keys.update(result["verifiedKeys"])
-                    skipped_checkpoint_keys.difference_update(result["verifiedKeys"])
+                    skipped_checkpoint_keys.difference_update(
+                        result["verifiedKeys"]
+                    )
                     skipped_checkpoint_keys.update(result["skippedKeys"])
-                    verified_checkpoint_keys.difference_update(result["skippedKeys"])
+                    verified_checkpoint_keys.difference_update(
+                        result["skippedKeys"]
+                    )
                     failed = result["failed"]
                     for key in result["verifiedKeys"]:
                         checkpoint_failures.pop(key, None)
@@ -1207,44 +1603,65 @@ class BrowserManager:
                             )
                             if degraded["failed"]:
                                 raise ConversationReadinessError(
-                                    "A message could not be preserved after checkpoint retries were exhausted: "
-                                    + _format_checkpoint_failures(degraded["failed"])
+                                    "A message could not be preserved after checkpoint "
+                                    "retries were exhausted: "
+                                    + _format_checkpoint_failures(
+                                        degraded["failed"]
+                                    )
                                 )
-                            verified_checkpoint_keys.update(degraded["verifiedKeys"])
-                            skipped_checkpoint_keys.difference_update(degraded["verifiedKeys"])
-                            skipped_checkpoint_keys.update(degraded["skippedKeys"])
-                            verified_checkpoint_keys.difference_update(degraded["skippedKeys"])
+                            verified_checkpoint_keys.update(
+                                degraded["verifiedKeys"]
+                            )
+                            skipped_checkpoint_keys.difference_update(
+                                degraded["verifiedKeys"]
+                            )
+                            skipped_checkpoint_keys.update(
+                                degraded["skippedKeys"]
+                            )
+                            verified_checkpoint_keys.difference_update(
+                                degraded["skippedKeys"]
+                            )
                             unresolved = exhausted.difference(
-                                degraded["verifiedKeys"], degraded["skippedKeys"]
+                                degraded["verifiedKeys"],
+                                degraded["skippedKeys"],
                             )
                             if unresolved:
                                 raise ConversationReadinessError(
-                                    "Checkpoint degradation did not preserve all exhausted messages: "
+                                    "Checkpoint degradation did not preserve all "
+                                    "exhausted messages: "
                                     + ", ".join(sorted(unresolved))
                                 )
                             for key in exhausted:
                                 checkpoint_failures.pop(key, None)
 
                         reload_keys = {
-                            key for key in recoverable if key not in checkpoint_reloaded_keys
+                            key
+                            for key in recoverable
+                            if key not in checkpoint_reloaded_keys
                         }
                         if reload_keys:
                             checkpoint_reloaded_keys.update(reload_keys)
                             checkpoint_reloads += 1
                             LOGGER.warning(
-                                "Reloading ChatGPT once to recover %s failed message checkpoint(s): %s",
+                                "Reloading ChatGPT once to recover %s failed "
+                                "message checkpoint(s): %s",
                                 len(reload_keys),
                                 ", ".join(sorted(reload_keys)[:5]),
                             )
                             await page.reload(wait_until="domcontentloaded")
+                            reset_at = _monotonic()
                             last_signature = None
                             last_semantic_signature = None
                             semantic_stable_observations = 0
+                            last_semantic_change = reset_at
                             last_progress_state = None
                             highest_scroll_height = 0
                             stable_observations = 0
-                            last_change = _monotonic()
-                            last_progress = last_change
+                            last_change = reset_at
+                            last_progress = reset_at
+                            pending_image_signature = None
+                            pending_image_started = None
+                            consecutive_noop_scrolls = 0
                             poll_seconds = policy.initial_poll_seconds
                             continue
 
@@ -1255,43 +1672,140 @@ class BrowserManager:
                             await asyncio.sleep(poll_seconds)
                             continue
 
+                inactive_for = now - last_progress
+
                 if not bool(state.get("atTop")):
                     if window_settled:
-                        scroll_state = await self._observe_conversation(page, scroll_up=True)
-                        scroll_changed = accumulator.merge(scroll_state.get("messages", []))
-                        before = float(scroll_state.get("beforeScrollTop", 0.0))
-                        after = float(scroll_state.get("afterScrollTop", before))
-                        LOGGER.debug(
-                            "Deep-scan window committed and scroll requested: before=%s after=%s messages=%s",
+                        force_scroll = (
+                            consecutive_noop_scrolls > 0
+                            or semantic_loader_recovery_confirmed
+                        )
+                        before_count = accumulator.count
+                        before_keys = accumulator.keys
+                        scroll_state = await self._observe_conversation(
+                            page,
+                            scroll_up=True,
+                            force_scroll=force_scroll,
+                        )
+                        last_scroll_state = dict(scroll_state)
+                        scroll_attempts += 1
+                        if force_scroll:
+                            forced_scroll_attempts += 1
+                        accumulator.merge(scroll_state.get("messages", []))
+                        scroll_message_progress = (
+                            accumulator.count > before_count
+                            or accumulator.keys != before_keys
+                        )
+                        before = float(
+                            scroll_state.get("beforeScrollTop", 0.0)
+                        )
+                        after = float(
+                            scroll_state.get("afterScrollTop", before)
+                        )
+                        moved = (
+                            scroll_message_progress
+                            or after < before - 1
+                            or bool(scroll_state.get("atTop"))
+                        )
+                        LOGGER.info(
+                            "Deep-scan scroll requested: strategy=%s force=%s "
+                            "before=%s after=%s delta=%s messages=%s "
+                            "scroller=%s loadingCount=%s",
+                            scroll_state.get("scrollStrategy") or "unknown",
+                            force_scroll,
                             before,
                             after,
+                            scroll_state.get("scrollDelta"),
                             accumulator.count,
+                            scroll_state.get("scrollerIdentity") or "unknown",
+                            scroll_state.get("loadingCount", 0),
                         )
                         last_signature = None
                         last_semantic_signature = None
                         semantic_stable_observations = 0
                         stable_observations = 0
-                        last_change = _monotonic()
-                        if scroll_changed or after < before or bool(scroll_state.get("atTop")):
-                            last_progress = last_change
-                        last_progress_state = _readiness_progress_state(scroll_state, accumulator)
+                        reset_at = _monotonic()
+                        last_semantic_change = reset_at
+                        last_change = reset_at
+                        last_progress_state = _readiness_progress_state(
+                            scroll_state,
+                            accumulator,
+                        )
                         highest_scroll_height = max(
                             highest_scroll_height,
                             int(last_progress_state["scrollHeight"]),
                         )
                         poll_seconds = policy.initial_poll_seconds
+
+                        if moved:
+                            last_progress = reset_at
+                            consecutive_noop_scrolls = 0
+                        else:
+                            consecutive_noop_scrolls += 1
+                            LOGGER.warning(
+                                "Conversation scroll made no upward progress "
+                                "(attempt=%s force=%s noop=%s/%s before=%s "
+                                "after=%s scroller=%s range=%s)",
+                                scroll_attempts,
+                                force_scroll,
+                                consecutive_noop_scrolls,
+                                policy.maximum_noop_scrolls,
+                                before,
+                                after,
+                                scroll_state.get("scrollerIdentity")
+                                or "unknown",
+                                scroll_state.get("scrollRange", 0),
+                            )
+                            if (
+                                consecutive_noop_scrolls
+                                >= policy.maximum_noop_scrolls
+                            ):
+                                await recover_stalled_window(
+                                    "normal and recovery scroll strategies "
+                                    "made no upward progress",
+                                    reset_at,
+                                )
+                                continue
+                    elif (
+                        accumulator.count > 0
+                        and inactive_for
+                        >= policy.stall_recovery_seconds
+                    ):
+                        blockers = state.get("blockingLoaderDescriptors") or []
+                        reason = (
+                            "the current non-empty DOM window could not become "
+                            "safe to checkpoint and scroll"
+                        )
+                        if blockers:
+                            reason += (
+                                "; visible blocking loader(s): "
+                                + ", ".join(str(item) for item in blockers[:5])
+                            )
+                        await recover_stalled_window(reason, now)
+                        continue
+
+                    if inactive_for >= policy.timeout_seconds:
+                        raise ConversationReadinessError(
+                            _readiness_timeout_message(
+                                last_state,
+                                accumulator.count,
+                                accumulator.pending_image_count,
+                                policy,
+                                elapsed_seconds=now - started,
+                                inactive_seconds=inactive_for,
+                                diagnostics=diagnostics(now),
+                            )
+                        )
                     await asyncio.sleep(poll_seconds)
                     continue
 
                 readiness_stability_confirmed = (
                     (
                         stable_for >= policy.stability_window_seconds
-                        and stable_observations >= policy.minimum_stable_observations
+                        and stable_observations
+                        >= policy.minimum_stable_observations
                     )
-                    or (
-                        stalled_image_window
-                        and semantic_stable_observations >= policy.minimum_stable_observations
-                    )
+                    or semantic_stability_confirmed
                 )
                 is_ready = (
                     all(ready_flags.values())
@@ -1299,20 +1813,30 @@ class BrowserManager:
                     and (
                         message_checkpoint_callback is None
                         or set(accumulator.keys).issubset(
-                            verified_checkpoint_keys | skipped_checkpoint_keys
+                            verified_checkpoint_keys
+                            | skipped_checkpoint_keys
                         )
                     )
                 )
                 if is_ready:
-                    final_state = await self._observe_conversation(page, scroll_up=False)
+                    final_state = await self._observe_conversation(
+                        page,
+                        scroll_up=False,
+                        force_scroll=False,
+                    )
                     final_messages = [
                         dict(item)
                         for item in final_state.get("messages", [])
                         if isinstance(item, dict)
                     ]
                     final_changed = accumulator.merge(final_messages)
-                    final_signature = _observation_signature(final_state, accumulator)
-                    final_semantic_signature = _window_semantic_signature(final_messages)
+                    final_signature = _observation_signature(
+                        final_state,
+                        accumulator,
+                    )
+                    final_semantic_signature = _window_semantic_signature(
+                        final_messages
+                    )
                     final_pending_images = {
                         str(item.get("key") or "").strip(): max(
                             0,
@@ -1327,7 +1851,14 @@ class BrowserManager:
                         ) > 0
                     }
                     final_unresolved_pending = sum(
-                        max(0, count - max(0, int(accepted_pending_images.get(key, 0))))
+                        max(
+                            0,
+                            count
+                            - max(
+                                0,
+                                int(accepted_pending_images.get(key, 0)),
+                            ),
+                        )
                         for key, count in final_pending_images.items()
                     )
                     final_ready = (
@@ -1335,43 +1866,78 @@ class BrowserManager:
                         and not bool(final_state.get("continueRequired"))
                         and int(final_state.get("loadingCount", 0)) == 0
                         and final_unresolved_pending == 0
-                        and accumulator.unresolved_pending_image_count(accepted_pending_images) == 0
+                        and accumulator.unresolved_pending_image_count(
+                            accepted_pending_images
+                        )
+                        == 0
                         and bool(final_state.get("atTop"))
                     )
                     final_observation_stable = (
-                        (not final_changed and final_signature == signature)
-                        or (
-                            stalled_image_window
-                            and final_semantic_signature == semantic_signature
+                        not final_changed
+                        and (
+                            final_signature == signature
+                            or (
+                                semantic_stability_confirmed
+                                and final_semantic_signature
+                                == semantic_signature
+                            )
                         )
                     )
                     if final_observation_stable and final_ready:
                         last_state = final_state
                         break
                     last_signature = final_signature
-                    last_change = _monotonic()
+                    last_semantic_signature = final_semantic_signature
+                    last_semantic_change = _monotonic()
+                    last_change = last_semantic_change
                     stable_observations = 0
+                    semantic_stable_observations = 0
                     continue
 
+                if inactive_for >= policy.timeout_seconds:
+                    raise ConversationReadinessError(
+                        _readiness_timeout_message(
+                            last_state,
+                            accumulator.count,
+                            accumulator.pending_image_count,
+                            policy,
+                            elapsed_seconds=now - started,
+                            inactive_seconds=inactive_for,
+                            diagnostics=diagnostics(now),
+                        )
+                    )
+
                 await asyncio.sleep(poll_seconds)
+
             title = str(last_state.get("title") or "").strip()
             if title.casefold() in {"chatgpt", "new chat"}:
                 title = ""
             title = title or await self._page_title(page)
             head_html = await page.locator("head").inner_html()
-            snapshot_html = _build_snapshot_html(head_html, accumulator.html_fragments(), title)
+            snapshot_html = _build_snapshot_html(
+                head_html,
+                accumulator.html_fragments(),
+                title,
+            )
             browser_version = await _browser_version(page)
             estimated_size = len(snapshot_html.encode("utf-8"))
             asset_counts = accumulator.asset_counts
             if accumulator.fallback_count:
                 LOGGER.warning(
-                    "%s message(s) lacked stable ChatGPT identifiers; deterministic content fallbacks were used",
+                    "%s message(s) lacked stable ChatGPT identifiers; "
+                    "deterministic content fallbacks were used",
                     accumulator.fallback_count,
                 )
             LOGGER.info(
-                "Conversation stabilized and deep-scanned: messages=%s size=%s bytes",
+                "Conversation stabilized and deep-scanned: messages=%s "
+                "size=%s bytes scrollAttempts=%s forcedScrollAttempts=%s "
+                "stallReloads=%s semanticFallbackWindows=%s",
                 accumulator.count,
                 estimated_size,
+                scroll_attempts,
+                forced_scroll_attempts,
+                stall_reloads,
+                len(semantic_fallback_windows),
             )
             if progress_callback is not None:
                 progress_callback(
@@ -1398,42 +1964,89 @@ class BrowserManager:
                 "readiness": {
                     "documentReady": bool(last_state.get("documentReady")),
                     "reactReady": bool(last_state.get("appReady")),
-                    "conversationContainer": bool(last_state.get("conversationContainer")),
+                    "conversationContainer": bool(
+                        last_state.get("conversationContainer")
+                    ),
                     "messageCount": accumulator.count,
-                    "mutationRevision": int(last_state.get("mutationRevision", 0)),
+                    "mutationRevision": int(
+                        last_state.get("mutationRevision", 0)
+                    ),
+                    "mutationIdleMs": int(
+                        last_state.get("mutationIdleMs", 0)
+                    ),
                     "scrollHeight": int(last_state.get("scrollHeight", 0)),
-                    "streamingComplete": not bool(last_state.get("streaming")),
+                    "scrollerIdentity": (
+                        last_state.get("scrollerIdentity") or "unknown"
+                    ),
+                    "streamingComplete": not bool(
+                        last_state.get("streaming")
+                    ),
                     "lazyLoadingComplete": bool(last_state.get("atTop")),
                     "imagesReady": (
-                        accumulator.unresolved_pending_image_count(accepted_pending_images) == 0
+                        accumulator.unresolved_pending_image_count(
+                            accepted_pending_images
+                        )
+                        == 0
                     ),
-                    "accumulatedPendingImages": accumulator.pending_image_count,
-                    "unresolvedPendingImages": accumulator.unresolved_pending_image_count(
-                        accepted_pending_images
+                    "accumulatedPendingImages": (
+                        accumulator.pending_image_count
+                    ),
+                    "unresolvedPendingImages": (
+                        accumulator.unresolved_pending_image_count(
+                            accepted_pending_images
+                        )
                     ),
                     "stalledImageCount": stalled_image_count,
-                    "imageRenderGraceSeconds": policy.image_render_grace_seconds,
-                    "stabilityWindowSeconds": policy.stability_window_seconds,
-                    "incrementalVerification": message_checkpoint_callback is not None,
+                    "imageRenderGraceSeconds": (
+                        policy.image_render_grace_seconds
+                    ),
+                    "stabilityWindowSeconds": (
+                        policy.stability_window_seconds
+                    ),
+                    "semanticStabilityWindowSeconds": (
+                        policy.semantic_stability_window_seconds
+                    ),
+                    "incrementalVerification": (
+                        message_checkpoint_callback is not None
+                    ),
                     "checkpointedMessages": len(
-                        verified_checkpoint_keys | skipped_checkpoint_keys
+                        verified_checkpoint_keys
+                        | skipped_checkpoint_keys
                     ),
                     "checkpointReloads": checkpoint_reloads,
                     "emptyStateReloads": empty_state_reloads,
-                    "messageRetryCount": performance.message_retry_count,
+                    "stallReloads": stall_reloads,
+                    "scrollAttempts": scroll_attempts,
+                    "forcedScrollAttempts": forced_scroll_attempts,
+                    "semanticFallbackWindows": len(
+                        semantic_fallback_windows
+                    ),
+                    "messageRetryCount": (
+                        performance.message_retry_count
+                    ),
                 },
             }
         finally:
             try:
                 await page.evaluate(_CLEANUP_OBSERVER_SCRIPT)
             except PlaywrightError:
-                LOGGER.debug("Unable to clean up DOM observer because the page is unavailable", exc_info=True)
+                LOGGER.debug(
+                    "Unable to clean up DOM observer because the page is unavailable",
+                    exc_info=True,
+                )
 
-    async def _observe_conversation(self, page: Page, *, scroll_up: bool) -> dict[str, Any]:
+    async def _observe_conversation(
+        self,
+        page: Page,
+        *,
+        scroll_up: bool,
+        force_scroll: bool = False,
+    ) -> dict[str, Any]:
         payload = {
             "messageSelector": MESSAGE_SELECTOR,
             "primaryMessageSelector": PRIMARY_MESSAGE_SELECTOR,
             "fallbackMessageSelector": FALLBACK_MESSAGE_SELECTOR,
+            "messageIdSelector": MESSAGE_ID_SELECTOR,
             "applicationRootSelector": APPLICATION_ROOT_SELECTOR,
             "conversationContainerSelector": CONVERSATION_CONTAINER_SELECTOR,
             "loadingSelector": LOADING_SELECTOR,
@@ -1441,11 +2054,34 @@ class BrowserManager:
             "modelSelectors": list(MODEL_SELECTORS),
             "workspaceSelectors": list(WORKSPACE_SELECTORS),
             "scrollUp": scroll_up,
+            "forceScroll": force_scroll,
         }
-        value = await page.evaluate(_OBSERVATION_SCRIPT, payload)
-        if not isinstance(value, dict):
-            raise ConversationReadinessError("ChatGPT DOM observation returned an invalid readiness snapshot.")
-        return value
+        last_error: BaseException | None = None
+        for attempt in range(1, 4):
+            try:
+                value = await page.evaluate(_OBSERVATION_SCRIPT, payload)
+            except (PlaywrightTimeoutError, PlaywrightError) as exc:
+                last_error = exc
+                if attempt >= 3:
+                    raise
+                LOGGER.warning(
+                    "Transient ChatGPT DOM observation failure; retrying in-place "
+                    "without resetting accumulated messages (attempt=%s/3): %s",
+                    attempt,
+                    exc,
+                )
+                await asyncio.sleep(min(3.0, 0.5 * (2 ** (attempt - 1))))
+                continue
+            if not isinstance(value, dict):
+                raise ConversationReadinessError(
+                    "ChatGPT DOM observation returned an invalid readiness snapshot."
+                )
+            return value
+        if last_error is not None:
+            raise last_error
+        raise ConversationReadinessError(
+            "ChatGPT DOM observation failed without a diagnostic exception."
+        )
 
     @retry(
         retry=retry_if_exception(_is_retryable_download_error),
@@ -1672,6 +2308,18 @@ def _readiness_policy(performance: PerformanceSettings) -> _ReadinessPolicy:
         "Safe": 45.0,
         "Auto": 20.0,
     }[performance.delay_mode]
+    semantic_stability_window_seconds = {
+        "Fast": 1.5,
+        "Normal": 3.0,
+        "Safe": 5.0,
+        "Auto": 3.0,
+    }[performance.delay_mode]
+    stall_recovery_seconds = {
+        "Fast": 20.0,
+        "Normal": 45.0,
+        "Safe": 90.0,
+        "Auto": 45.0,
+    }[performance.delay_mode]
     return _ReadinessPolicy(
         timeout_seconds=timeout_seconds,
         stability_window_seconds=stability_window_seconds,
@@ -1680,6 +2328,10 @@ def _readiness_policy(performance: PerformanceSettings) -> _ReadinessPolicy:
         maximum_poll_seconds=maximum_poll_seconds,
         empty_state_recovery_seconds=empty_state_recovery_seconds,
         image_render_grace_seconds=image_render_grace_seconds,
+        semantic_stability_window_seconds=semantic_stability_window_seconds,
+        stall_recovery_seconds=stall_recovery_seconds,
+        maximum_stall_reloads=2,
+        maximum_noop_scrolls=2,
     )
 
 
@@ -1688,13 +2340,22 @@ def _window_semantic_signature(messages: Iterable[dict[str, Any]]) -> tuple[Any,
     return tuple(
         (
             str(item.get("key") or ""),
-            str(item.get("role") or ""),
-            str(item.get("text") or ""),
-            str(item.get("timestamp") or ""),
-            max(0, int(item.get("imageCount", 0))),
-            max(0, int(item.get("attachmentCount", 0))),
-            max(0, int(item.get("codeBlockCount", 0))),
-            max(0, int(item.get("tableCount", 0))),
+            str(item.get("semanticSignature") or "")
+            or (
+                str(item.get("role") or "")
+                + "|"
+                + str(item.get("text") or "")
+                + "|"
+                + str(item.get("timestamp") or "")
+                + "|"
+                + str(max(0, int(item.get("imageCount", 0))))
+                + "|"
+                + str(max(0, int(item.get("attachmentCount", 0))))
+                + "|"
+                + str(max(0, int(item.get("codeBlockCount", 0))))
+                + "|"
+                + str(max(0, int(item.get("tableCount", 0))))
+            ),
         )
         for item in messages
     )
@@ -1880,6 +2541,8 @@ def _readiness_timeout_message(
     *,
     elapsed_seconds: float | None = None,
     inactive_seconds: float | None = None,
+    diagnostics: dict[str, Any] | None = None,
+    reason: str | None = None,
 ) -> str:
     elapsed = "" if elapsed_seconds is None else f" elapsed={elapsed_seconds:.1f}s;"
     inactive = (
@@ -1887,6 +2550,35 @@ def _readiness_timeout_message(
         if inactive_seconds is None
         else f" noMeaningfulProgress={inactive_seconds:.1f}s;"
     )
+    extra = dict(diagnostics or {})
+    diagnostic_text = (
+        f" windowReadyToScroll={bool(state.get('windowReadyToScroll'))},"
+        f" loadingCount={int(state.get('loadingCount', 0))},"
+        f" mutationRevision={int(state.get('mutationRevision', 0))},"
+        f" mutationIdleMs={int(state.get('mutationIdleMs', 0))},"
+        f" afterScrollTop={int(state.get('afterScrollTop', state.get('beforeScrollTop', 0)))},"
+        f" scrollDelta={int(state.get('scrollDelta', 0))},"
+        f" scrollStrategy={state.get('scrollStrategy') or extra.get('lastScrollStrategy') or 'none'},"
+        f" scroller={state.get('scrollerIdentity') or extra.get('scrollerIdentity') or 'unknown'},"
+        f" scrollRange={int(state.get('scrollRange', extra.get('scrollRange') or 0))},"
+        f" stableObservations={int(extra.get('stableObservations') or 0)},"
+        f" semanticStableObservations={int(extra.get('semanticStableObservations') or 0)},"
+        f" semanticStableSeconds={float(extra.get('semanticStableSeconds') or 0.0):.1f},"
+        f" scrollAttempts={int(extra.get('scrollAttempts') or 0)},"
+        f" forcedScrollAttempts={int(extra.get('forcedScrollAttempts') or 0)},"
+        f" consecutiveNoopScrolls={int(extra.get('consecutiveNoopScrolls') or 0)},"
+        f" stallReloads={int(extra.get('stallReloads') or 0)},"
+        f" checkpointReloads={int(extra.get('checkpointReloads') or 0)},"
+        f" emptyStateReloads={int(extra.get('emptyStateReloads') or 0)},"
+        f" verifiedCheckpointMessages={int(extra.get('verifiedCheckpointMessages') or 0)}"
+    )
+    blocking_loaders = state.get("blockingLoaderDescriptors")
+    if isinstance(blocking_loaders, list) and blocking_loaders:
+        diagnostic_text += (
+            ", blockingLoaders="
+            + "|".join(str(item) for item in blocking_loaders[:5])
+        )
+    reason_text = "" if not reason else f" Recovery stopped because {reason}."
     return (
         "Conversation readiness could not be confirmed because the adaptive progress window stalled. "
         f"Observed {accumulated_count} message(s); documentReady={bool(state.get('documentReady'))}, "
@@ -1897,8 +2589,10 @@ def _readiness_timeout_message(
         f"imageLoadingCount={int(state.get('imageLoadingCount', 0))}, "
         f"accumulatedPendingImages={accumulated_pending_images}, "
         f"scrollTop={int(state.get('beforeScrollTop', 0))}, "
-        f"scrollHeight={int(state.get('scrollHeight', 0))};{elapsed}{inactive} "
-        f"The {policy.timeout_seconds:.0f}-second no-progress policy was exhausted without reporting a partial export."
+        f"scrollHeight={int(state.get('scrollHeight', 0))};{elapsed}{inactive}"
+        f"{diagnostic_text}.{reason_text} "
+        f"The {policy.timeout_seconds:.0f}-second no-progress policy remains the final safety limit; "
+        "no partial export was published."
     )
 
 

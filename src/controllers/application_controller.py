@@ -393,10 +393,22 @@ class ApplicationController:
         workflow_name: str,
         function: Any,
     ) -> str:
-        """Submit one browser workflow and release its lease on every terminal path."""
+        """Submit one browser workflow with deterministic lease cleanup.
+
+        The worker wrapper releases the lease before ``TaskManager`` publishes a
+        terminal task state.  The done callback remains as an idempotent fallback
+        for a task cancelled before the wrapper starts executing.
+        """
         lease = self._browser_workflow_gate.acquire(workflow_name)
+
+        def leased_work(context: TaskContext) -> Any:
+            try:
+                return function(context)
+            finally:
+                self._browser_workflow_gate.release(lease)
+
         try:
-            task_id = self.task_manager.submit(workflow_name, function)
+            task_id = self.task_manager.submit(workflow_name, leased_work)
             if not self.task_manager.add_done_callback(
                 task_id,
                 lambda: self._browser_workflow_gate.release(lease),

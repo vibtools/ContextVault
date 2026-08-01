@@ -10,7 +10,11 @@ from pydantic import ValidationError
 from src.config.constants import DEFAULT_CONFIG_FILENAME
 from src.models.settings import ApplicationSettings
 from src.utils.json_io import read_json, write_json
-from src.utils.paths import configuration_path, data_directory
+from src.utils.paths import (
+    configuration_path,
+    data_directory,
+    portable_runtime_missing_paths,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,7 +51,15 @@ class ConfigService:
         try:
             return ApplicationSettings.model_validate(read_json(defaults_path))
         except (OSError, ValueError, ValidationError) as exc:
-            LOGGER.error("Shipped defaults are unavailable or invalid: %s", exc)
+            missing_runtime = portable_runtime_missing_paths()
+            LOGGER.warning(
+                "Shipped defaults are unavailable or invalid at %s; using embedded safe "
+                "model defaults. Keep ContextVault.exe beside the complete runtime folder. "
+                "missingRuntime=%s; error=%s",
+                defaults_path,
+                list(missing_runtime),
+                exc,
+            )
             return ApplicationSettings()
 
     def save(self, settings: ApplicationSettings) -> None:
