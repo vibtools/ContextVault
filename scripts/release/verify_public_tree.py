@@ -13,6 +13,8 @@ from typing import Sequence
 ROOT = Path(__file__).resolve().parents[2]
 
 REQUIRED_IGNORE_RULES = (
+    "__pycache__/",
+    "*.py[cod]",
     "/project/",
     ".venv-release/",
     "data/chrome-user-data/",
@@ -21,9 +23,9 @@ REQUIRED_IGNORE_RULES = (
     "data/checkpoints/",
     "exports/",
     "logs/",
-    "build/",
-    "dist/",
-    "artifacts/",
+    "/build/",
+    "/dist/",
+    "/artifacts/",
 )
 
 EXCLUDED_PREFIXES = (
@@ -42,6 +44,19 @@ EXCLUDED_EXACT_PATHS = {
     "data/settings.json",
     "data/export_history.json",
 }
+
+REQUIRED_TRACKABLE_PATHS = (
+    "scripts/build/build_windows.py",
+)
+
+REQUIRED_IGNORED_PROBES = (
+    "project/",
+    ".venv-release/",
+    "build/generated.bin",
+    "dist/generated.bin",
+    "artifacts/generated.bin",
+    "scripts/build/__pycache__/build_windows.pyc",
+)
 
 
 class PublicTreeVerificationError(RuntimeError):
@@ -138,7 +153,24 @@ def verify_public_tree(root: Path = ROOT) -> list[str]:
         if rule not in ignore_lines:
             errors.append(f".gitignore is missing mandatory public-boundary rule {rule!r}.")
 
-    for probe in ("project/", ".venv-release/"):
+    for relative in REQUIRED_TRACKABLE_PATHS:
+        source = root / relative
+        if not source.is_file():
+            errors.append(f"Required public release source is missing: {relative}")
+            continue
+        try:
+            result = _run_git(
+                git,
+                root,
+                ["check-ignore", "--quiet", "--no-index", relative],
+                accepted_return_codes={0, 1},
+            )
+            if result.returncode == 0:
+                errors.append(f"Required public release source is ignored: {relative}")
+        except (OSError, PublicTreeVerificationError) as exc:
+            errors.append(f"Unable to verify trackability for {relative!r}: {exc}")
+
+    for probe in REQUIRED_IGNORED_PROBES:
         try:
             result = _run_git(
                 git,
@@ -200,7 +232,8 @@ def main() -> int:
         return 1
 
     print("PASS Git repository root is valid.")
-    print("PASS private project/ and release environment paths are ignored.")
+    print("PASS required public release-build sources are present and trackable.")
+    print("PASS private, runtime, cache, and generated-output paths are ignored.")
     print("PASS no private or runtime-only paths are present in the Git index.")
     print("PASS no private or runtime-only additions are staged.")
     print("Public repository boundary verification passed.")

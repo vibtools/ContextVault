@@ -14,14 +14,15 @@ htmlcov/
 venv/
 env/
 
-# Build and release output
-build/
-dist/
-artifacts/
+# Root-level generated build and release output
+/build/
+/dist/
+/artifacts/
 *.spec
 *.build/
 *.dist/
 *.onefile-build/
+
 *.zip
 !tests/fixtures/*.zip
 

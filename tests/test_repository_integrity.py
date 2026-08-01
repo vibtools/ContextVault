@@ -80,8 +80,16 @@ class RepositoryIntegrityTests(unittest.TestCase):
         self.assertIn('"scripts/release/verify_public_tree.py"', verifier)
 
         gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn("__pycache__/", gitignore)
+        self.assertIn("*.py[cod]", gitignore)
         self.assertIn("/project/", gitignore)
         self.assertIn(".venv-release/", gitignore)
+        self.assertIn("/build/", gitignore)
+        self.assertIn("/dist/", gitignore)
+        self.assertIn("/artifacts/", gitignore)
+        self.assertNotIn("build/", gitignore)
+        self.assertNotIn("dist/", gitignore)
+        self.assertNotIn("artifacts/", gitignore)
 
     def test_nuitka_includes_customtkinter_package_data(self) -> None:
         with (ROOT / "nuitka.toml").open("rb") as stream:
@@ -97,6 +105,7 @@ class RepositoryIntegrityTests(unittest.TestCase):
             "scripts/release/verify_release_metadata.py",
             "scripts/release/verify_release_candidate.py",
             "scripts/release/verify_public_tree.py",
+            "scripts/build/build_windows.py", "scripts/build/README.md",
             "requirements-build.lock", "config/defaults.json", "tests",
         )
         missing = [item for item in required if not (ROOT / item).exists()]
@@ -108,25 +117,15 @@ class RepositoryIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run([git, "init", "--quiet", str(root)], check=True)
-            (root / ".gitignore").write_text(
-                "\n".join((
-                    "/project/",
-                    ".venv-release/",
-                    "data/chrome-user-data/",
-                    "data/settings.json",
-                    "data/export_history.json",
-                    "data/checkpoints/",
-                    "exports/",
-                    "logs/",
-                    "build/",
-                    "dist/",
-                    "artifacts/",
-                    "",
-                )),
-                encoding="utf-8",
-            )
+            (root / ".gitignore").write_bytes((ROOT / ".gitignore").read_bytes())
             (root / "README.md").write_text("# Test\n", encoding="utf-8")
-            subprocess.run([git, "-C", str(root), "add", ".gitignore", "README.md"], check=True)
+            build_script = root / "scripts/build/build_windows.py"
+            build_script.parent.mkdir(parents=True)
+            build_script.write_text("raise SystemExit(0)\n", encoding="utf-8")
+            subprocess.run(
+                [git, "-C", str(root), "add", ".gitignore", "README.md", "scripts/build/build_windows.py"],
+                check=True,
+            )
             self.assertEqual(verify_public_tree(root), [])
 
             private = root / "project" / "private.md"
